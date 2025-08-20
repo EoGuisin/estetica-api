@@ -1,0 +1,236 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------------------
+// Core Models
+// ----------------------------------------
+
+enum ClinicStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  INACTIVE
+  CANCELED
+}
+
+model Clinic {
+  id        String       @id @default(uuid())
+  name      String
+  taxId     String       @unique // Formerly CNPJ
+  status    ClinicStatus @default(PENDING_PAYMENT)
+  addressId String?
+
+  address        Address?        @relation(fields: [addressId], references: [id])
+  patients       Patient[]
+  users          User[]
+  treatmentPlans TreatmentPlan[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("clinics")
+}
+
+model User {
+  id                  String  @id @default(uuid())
+  fullName            String
+  cpf                 String  @unique
+  email               String  @unique
+  phone               String?
+  passwordHash        String
+  electronicSignature String?
+  scheduleStartHour   String? // e.g., "08:00"
+  scheduleEndHour     String? // e.g., "18:00"
+  appointmentDuration Int? // In minutes
+  notes               String?
+  clinicId            String
+  roleId              String
+
+  clinic       Clinic          @relation(fields: [clinicId], references: [id])
+  role         Role            @relation(fields: [roleId], references: [id])
+  specialties  Specialty[]     @relation("ProfessionalSpecialties")
+  appointments Appointment[]
+  sales        TreatmentPlan[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Patient {
+  id            String   @id @default(uuid())
+  imageUrl      String?
+  cpf           String   @unique
+  name          String
+  socialName    String?
+  birthDate     DateTime
+  identityCard  String?
+  gender        String? // Could be an Enum: MALE, FEMALE, OTHER
+  ethnicity     String?
+  motherName    String?
+  occupation    String?
+  notes         String?
+  trafficSource String?
+  clinicId      String
+
+  // Guardian Info
+  guardianName      String?
+  guardianBirthDate DateTime?
+
+  clinic         Clinic          @relation(fields: [clinicId], references: [id])
+  address        Address?        @relation(fields: [addressId], references: [id])
+  addressId      String?
+  phones         Phone[]
+  treatmentPlans TreatmentPlan[]
+  appointments   Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("patients")
+}
+
+// ----------------------------------------
+// Relation and Catalog Models
+// ----------------------------------------
+
+model Address {
+  id           String  @id @default(uuid())
+  zipCode      String
+  state        String
+  city         String
+  neighborhood String
+  street       String
+  number       String
+  complement   String?
+
+  patients Patient[]
+  clinics  Clinic[]
+
+  @@map("addresses")
+}
+
+model Phone {
+  id         String  @id @default(uuid())
+  number     String
+  isWhatsapp Boolean @default(false)
+  patientId  String
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("phones")
+}
+
+model Role {
+  id          String  @id @default(uuid())
+  name        String  @unique // admin, professional, secretary, financial, salesperson
+  description String?
+
+  users User[]
+
+  @@map("roles")
+}
+
+model Specialty {
+  id   String @id @default(uuid())
+  name String @unique
+
+  procedures    Procedure[]
+  professionals User[]      @relation("ProfessionalSpecialties")
+
+  @@map("specialties")
+}
+
+model Procedure {
+  id            String  @id @default(uuid())
+  name          String
+  standardPrice Decimal @db.Decimal(10, 2)
+  description   String?
+  specialtyId   String
+
+  specialty      Specialty                @relation(fields: [specialtyId], references: [id])
+  treatmentPlans TreatmentPlanProcedure[]
+
+  @@map("procedures")
+}
+
+model TreatmentPlan {
+  id                 String   @id @default(uuid())
+  patientId          String
+  clinicId           String
+  sellerId           String
+  subtotal           Decimal  @db.Decimal(10, 2)
+  discountAmount     Decimal? @db.Decimal(10, 2)
+  discountPercentage Decimal? @db.Decimal(5, 2) // e.g., 10.50 for 10.50%
+  surcharge          Decimal? @db.Decimal(10, 2)
+  total              Decimal  @db.Decimal(10, 2)
+
+  patient      Patient                  @relation(fields: [patientId], references: [id])
+  clinic       Clinic                   @relation(fields: [clinicId], references: [id])
+  seller       User                     @relation(fields: [sellerId], references: [id])
+  procedures   TreatmentPlanProcedure[]
+  appointments Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("treatment_plans")
+}
+
+model TreatmentPlanProcedure {
+  id                 String  @id @default(uuid())
+  treatmentPlanId    String
+  procedureId        String
+  contractedSessions Int
+  completedSessions  Int     @default(0)
+  unitPrice          Decimal @db.Decimal(10, 2) // Price at the moment of sale
+  followUps          Int     @default(0)
+
+  treatmentPlan TreatmentPlan @relation(fields: [treatmentPlanId], references: [id], onDelete: Cascade)
+  procedure     Procedure     @relation(fields: [procedureId], references: [id])
+
+  @@map("treatment_plan_procedures")
+}
+
+model Appointment {
+  id        String   @id @default(uuid())
+  date      DateTime
+  startTime String // "14:30"
+  endTime   String // "15:30"
+  notes     String?
+  status    String   @default("SCHEDULED") // SCHEDULED, CONFIRMED, CANCELED, COMPLETED
+
+  patientId         String
+  professionalId    String
+  appointmentTypeId String
+  treatmentPlanId   String? // Optional, if it's a session from a plan
+
+  patient         Patient         @relation(fields: [patientId], references: [id])
+  professional    User            @relation(fields: [professionalId], references: [id])
+  appointmentType AppointmentType @relation(fields: [appointmentTypeId], references: [id])
+  treatmentPlan   TreatmentPlan?  @relation(fields: [treatmentPlanId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("appointments")
+}
+
+model AppointmentType {
+  id   String @id @default(uuid())
+  name String @unique // Consultation, Follow-up, Procedure
+
+  appointments Appointment[]
+
+  @@map("appointment_types")
+}
