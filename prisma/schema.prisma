@@ -40,11 +40,23 @@ model Clinic {
   @@map("clinics")
 }
 
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  expiresAt DateTime
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("password_reset_tokens")
+}
+
 model User {
-  id                  String  @id @default(uuid())
+  id                  String               @id @default(uuid())
   fullName            String
-  cpf                 String  @unique
-  email               String  @unique
+  cpf                 String?              @unique
+  email               String               @unique
   phone               String?
   passwordHash        String
   electronicSignature String?
@@ -54,6 +66,7 @@ model User {
   notes               String?
   clinicId            String
   roleId              String
+  passwordResetTokens PasswordResetToken[]
 
   clinic       Clinic          @relation(fields: [clinicId], references: [id])
   role         Role            @relation(fields: [roleId], references: [id])
@@ -132,9 +145,10 @@ model Phone {
 }
 
 model Role {
-  id          String  @id @default(uuid())
-  name        String  @unique // admin, professional, secretary, financial, salesperson
-  description String?
+  id           String  @id @default(uuid())
+  name         String  @unique // admin, professional, secretary, financial, salesperson
+  description  String?
+  isSuperAdmin Boolean @default(false)
 
   users User[]
 
