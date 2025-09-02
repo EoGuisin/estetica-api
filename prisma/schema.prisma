@@ -64,6 +64,7 @@ model User {
   scheduleEndHour     String? // e.g., "18:00"
   appointmentDuration Int? // In minutes
   notes               String?
+  color               String?              @default("#ffffff") // Cor para o calendário
   clinicId            String
   roleId              String
   passwordResetTokens PasswordResetToken[]

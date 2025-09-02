@@ -3,6 +3,7 @@ import fastify from "fastify";
 import cors from "@fastify/cors";
 import { ZodError } from "zod";
 import { authRoutes } from "./routes/auth.routes";
+import { dashboardRoutes } from "./routes/dashboard.routes";
 
 export const app = fastify();
 
@@ -16,8 +17,12 @@ app.get("/", () => {
   return { message: "API de Estética está funcionando!" };
 });
 
+
 // Registra as rotas de autenticação
 app.register(authRoutes, { prefix: "/auth" });
+
+// Registra as rotas do dashboard
+app.register(dashboardRoutes, { prefix: "/dashboard" });
 
 // Tratamento global de erros
 app.setErrorHandler((error, request, reply) => {

@@ -17,11 +17,10 @@ export class AuthService {
   static async login(data: LoginInput) {
     const { email, password } = data;
 
-    // 1. Encontrar o usuário e INCLUIR os dados da clínica relacionada
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
-        clinic: true, // A MÁGICA ACONTECE AQUI!
+        clinic: true,
       },
     });
 
@@ -31,12 +30,10 @@ export class AuthService {
 
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
-    // Melhora: Lançar erro customizado para o controller tratar
     if (!isPasswordValid) {
       throw { code: "UNAUTHORIZED", message: "Email ou senha inválidos." };
     }
 
-    // 3. Gerar o token JWT
     const secret = process.env.JWT_SECRET;
     if (!secret) {
       throw new Error("Chave secreta JWT não configurada.");
@@ -148,17 +145,6 @@ export class AuthService {
       });
 
       const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
-
-      // let recipientEmail = user.email;
-      // if (process.env.NODE_ENV === "development") {
-      //   const devEmail = process.env.DEVELOPER_EMAIL;
-      //   if (devEmail) {
-      //     recipientEmail = devEmail;
-      //     console.log(
-      //       `[MODO DE DESENVOLVIMENTO] E-mail real: ${user.email}, redirecionado para: ${recipientEmail}`
-      //     );
-      //   }
-      // }
 
       await resend.emails.send({
         from: "Acme <onboarding@resend.dev>",
