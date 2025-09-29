@@ -1,75 +1,36 @@
 // prisma/seed.ts
-import { PrismaClient, ClinicStatus } from "@prisma/client";
-import bcrypt from "bcryptjs";
-
+import { PrismaClient, RoleType } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("Iniciando o script de seed...");
+  console.log(`Start seeding ...`);
 
-  // Pegar credenciais do .env
-  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL;
-  const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD;
+  const roles = [
+    // Adicionado o superadmin aqui para garantir que ele sempre exista
+    { name: "superadmin", type: RoleType.ADMIN, isSuperAdmin: true },
+    { name: "Admin", type: RoleType.ADMIN },
+    { name: "Profissional", type: RoleType.PROFESSIONAL },
+    { name: "Secretária", type: RoleType.SECRETARY },
+    { name: "Financeiro", type: RoleType.FINANCIAL },
+  ];
 
-  if (!superAdminEmail || !superAdminPassword) {
-    throw new Error(
-      "As variáveis de ambiente SUPER_ADMIN_EMAIL e SUPER_ADMIN_PASSWORD são obrigatórias."
-    );
+  for (const role of roles) {
+    // Upsert vai criar o papel se não existir, ou não fazer nada se já existir.
+    // Isso torna o script seguro para ser rodado várias vezes.
+    await prisma.role.upsert({
+      where: { name: role.name },
+      update: {},
+      create: role,
+    });
+    console.log(`Ensured role exists: ${role.name}`);
   }
 
-  // Criptografar a senha
-  const hashedPassword = await bcrypt.hash(superAdminPassword, 10);
-
-  // Usar uma transação para garantir que tudo seja criado com sucesso
-  await prisma.$transaction(async (tx) => {
-    // 1. Criar a função (Role) de Super Admin (se não existir)
-    const superAdminRole = await tx.role.upsert({
-      where: { name: "superadmin" },
-      update: {},
-      create: {
-        name: "superadmin",
-        description: "Acesso total ao sistema.",
-        isSuperAdmin: true,
-      },
-    });
-    console.log(`Função '${superAdminRole.name}' criada/confirmada.`);
-
-    // 2. Criar uma clínica "Mestre" para o Super Admin (se não existir)
-    const masterClinic = await tx.clinic.upsert({
-      where: { taxId: "00000000000000" }, // CNPJ fictício para a clínica mestre
-      update: {},
-      create: {
-        name: "AURA System Admin",
-        taxId: "00000000000000",
-        status: ClinicStatus.ACTIVE, // <-- Nasce ATIVA, bypassando o pagamento
-      },
-    });
-    console.log(`Clínica '${masterClinic.name}' criada/confirmada.`);
-
-    // 3. Criar o usuário Super Admin (se não existir)
-    const superAdminUser = await tx.user.upsert({
-      where: { email: superAdminEmail },
-      update: {},
-      create: {
-        fullName: "Administrador do Sistema",
-        email: superAdminEmail,
-        passwordHash: hashedPassword,
-        clinicId: masterClinic.id,
-        roleId: superAdminRole.id,
-        cpf: "00000000000",
-      },
-    });
-    console.log(
-      `Usuário Super Admin '${superAdminUser.email}' criado/confirmado.`
-    );
-  });
-
-  console.log("Seed script finalizado com sucesso!");
+  console.log(`Seeding finished.`);
 }
 
 main()
   .catch((e) => {
-    console.error("Erro ao executar o seed script:", e);
+    console.error(e);
     process.exit(1);
   })
   .finally(async () => {

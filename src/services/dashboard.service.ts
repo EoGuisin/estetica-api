@@ -8,9 +8,7 @@ export class DashboardService {
     return prisma.user.findMany({
       where: {
         clinicId: clinicId,
-        role: {
-          name: "professional", // Assumindo que a role se chama 'professional'
-        },
+        isProfessional: true,
       },
       select: {
         id: true,
