@@ -29,7 +29,9 @@ export class DashboardService {
   ) {
     // Constrói a cláusula 'where' dinamicamente
     const whereClause: any = {
-      clinicId: clinicId,
+      professional: {
+        clinicId: clinicId,
+      },
       date: {
         gte: startDate,
         lte: endDate,
@@ -46,16 +48,50 @@ export class DashboardService {
     return prisma.appointment.findMany({
       where: whereClause,
       include: {
+        // 1. Paciente: Adicionar CPF e telefones
         patient: {
           select: {
             name: true,
             imageUrl: true,
+            cpf: true, // Adicionado
+            phones: true, // Adicionado
           },
         },
+
+        // 2. Profissional: Já está OK para o modal
         professional: {
           select: {
             fullName: true,
             color: true,
+          },
+        },
+
+        // 3. Tipo de Agendamento: Faltando completamente
+        appointmentType: {
+          select: {
+            name: true,
+          },
+        },
+
+        // 4. Plano de Tratamento: Faltando completamente
+        treatmentPlan: {
+          include: {
+            seller: {
+              select: {
+                fullName: true,
+              },
+            },
+            procedures: {
+              select: {
+                contractedSessions: true,
+                completedSessions: true,
+                procedure: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
