@@ -7,8 +7,8 @@ export async function patientRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authMiddleware);
 
   app.post("/", PatientController.create);
-  app.get("/", PatientController.list); // LISTAR TODOS
-  app.get("/:id", PatientController.getById); // BUSCAR UM
-  app.put("/:id", PatientController.update); // ATUALIZAR
-  app.delete("/:id", PatientController.delete); // DELETAR
+  app.get("/", PatientController.list);
+  app.get("/:id", PatientController.getById);
+  app.put("/:id", PatientController.update);
+  app.delete("/:id", PatientController.delete);
 }

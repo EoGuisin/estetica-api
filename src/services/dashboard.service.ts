@@ -51,10 +51,11 @@ export class DashboardService {
         // 1. Paciente: Adicionar CPF e telefones
         patient: {
           select: {
+            id: true,
             name: true,
             imageUrl: true,
-            cpf: true, // Adicionado
-            phones: true, // Adicionado
+            cpf: true,
+            phones: true,
           },
         },
 

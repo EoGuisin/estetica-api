@@ -1,4 +1,3 @@
-// src/app.ts
 import fastify from "fastify";
 import cors from "@fastify/cors";
 import { ZodError } from "zod";
@@ -10,24 +9,22 @@ import { patientRoutes } from "./routes/patient.routes";
 import { userRoutes } from "./routes/user.routes";
 import { specialtyRoutes } from "./routes/specialty.routes";
 import { treatmentPlanRoutes } from "./routes/treatmentPlan.routes";
+import { anamnesisRoutes } from "./routes/anamnesis.routes";
+import { attendanceRoutes } from "./routes/attendance.routes";
 
-// CORREÇÃO: Adicione a opção 'bodyLimit' ao criar o app
 export const app = fastify({
-  bodyLimit: 5 * 1024 * 1024, // 5 MB de limite para o corpo da requisição
+  bodyLimit: 5 * 1024 * 1024,
 });
 
-// Configura o CORS
 app.register(cors, {
   origin: "http://localhost:3000",
   methods: ["GET", "POST", "PUT", "DELETE"],
 });
 
-// Rota de Health Check
 app.get("/", () => {
   return { message: "API de Estética está funcionando!" };
 });
 
-// Registra as rotas
 app.register(authRoutes, { prefix: "/auth" });
 app.register(dashboardRoutes, { prefix: "/dashboard" });
 app.register(appointmentRoutes, { prefix: "/appointments" });
@@ -36,6 +33,8 @@ app.register(patientRoutes, { prefix: "/patients" });
 app.register(userRoutes, { prefix: "/users" });
 app.register(specialtyRoutes, { prefix: "/specialties" });
 app.register(treatmentPlanRoutes, { prefix: "/treatment-plans" });
+app.register(anamnesisRoutes, { prefix: "/anamnesis" });
+app.register(attendanceRoutes, { prefix: "/attendance" });
 
 app.setErrorHandler((error, request, reply) => {
   if (error.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
@@ -46,14 +45,12 @@ app.setErrorHandler((error, request, reply) => {
       },
     });
   }
-
   if (error instanceof ZodError) {
     return reply.status(400).send({
       message: "Erro de validação",
       issues: error.format(),
     });
   }
-
   console.error(error);
   return reply.status(500).send({ message: "Erro interno do servidor." });
 });

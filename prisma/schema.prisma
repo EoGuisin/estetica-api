@@ -36,10 +36,12 @@ model Clinic {
   status    ClinicStatus @default(PENDING_PAYMENT)
   addressId String?
 
-  address        Address?        @relation(fields: [addressId], references: [id])
-  patients       Patient[]
-  users          User[]
-  treatmentPlans TreatmentPlan[]
+  address            Address?            @relation(fields: [addressId], references: [id])
+  patients           Patient[]
+  users              User[]
+  treatmentPlans     TreatmentPlan[]
+  anamnesisTemplates AnamnesisTemplate[]
+  patientAssessments PatientAssessment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -60,8 +62,8 @@ model PasswordResetToken {
 }
 
 model User {
-  id             String  @id @default(uuid())
-  isProfessional Boolean @default(false)
+  id                  String               @id @default(uuid())
+  isProfessional      Boolean              @default(false)
   fullName            String
   cpf                 String?              @unique
   email               String               @unique
@@ -77,11 +79,12 @@ model User {
   roleId              String
   passwordResetTokens PasswordResetToken[]
 
-  clinic       Clinic          @relation(fields: [clinicId], references: [id])
-  role         Role            @relation(fields: [roleId], references: [id])
-  specialties  Specialty[]     @relation("ProfessionalSpecialties")
+  clinic       Clinic              @relation(fields: [clinicId], references: [id])
+  role         Role                @relation(fields: [roleId], references: [id])
+  specialties  Specialty[]         @relation("ProfessionalSpecialties")
   appointments Appointment[]
   sales        TreatmentPlan[]
+  assessments  PatientAssessment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -110,12 +113,15 @@ model Patient {
   guardianName      String?
   guardianBirthDate DateTime?
 
-  clinic         Clinic          @relation(fields: [clinicId], references: [id])
-  address        Address?        @relation(fields: [addressId], references: [id])
-  addressId      String?
-  phones         Phone[]
-  treatmentPlans TreatmentPlan[]
-  appointments   Appointment[]
+  clinic            Clinic              @relation(fields: [clinicId], references: [id])
+  address           Address?            @relation(fields: [addressId], references: [id])
+  addressId         String?
+  phones            Phone[]
+  treatmentPlans    TreatmentPlan[]
+  appointments      Appointment[]
+  assessments       PatientAssessment[]
+  attachments       Attachment[]
+  beforeAfterImages BeforeAfterImage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -205,15 +211,16 @@ model TreatmentPlan {
   sellerId           String
   subtotal           Decimal  @db.Decimal(10, 2)
   discountAmount     Decimal? @db.Decimal(10, 2)
-  discountPercentage Decimal? @db.Decimal(5, 2) // e.g., 10.50 for 10.50%
+  discountPercentage Decimal? @db.Decimal(5, 2)
   surcharge          Decimal? @db.Decimal(10, 2)
   total              Decimal  @db.Decimal(10, 2)
 
-  patient      Patient                  @relation(fields: [patientId], references: [id])
-  clinic       Clinic                   @relation(fields: [clinicId], references: [id])
-  seller       User                     @relation(fields: [sellerId], references: [id])
-  procedures   TreatmentPlanProcedure[]
-  appointments Appointment[]
+  patient           Patient                  @relation(fields: [patientId], references: [id])
+  clinic            Clinic                   @relation(fields: [clinicId], references: [id])
+  seller            User                     @relation(fields: [sellerId], references: [id])
+  procedures        TreatmentPlanProcedure[]
+  appointments      Appointment[]
+  beforeAfterImages BeforeAfterImage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -249,10 +256,12 @@ model Appointment {
   appointmentTypeId String
   treatmentPlanId   String? // Optional, if it's a session from a plan
 
-  patient         Patient         @relation(fields: [patientId], references: [id])
-  professional    User            @relation(fields: [professionalId], references: [id])
-  appointmentType AppointmentType @relation(fields: [appointmentTypeId], references: [id])
-  treatmentPlan   TreatmentPlan?  @relation(fields: [treatmentPlanId], references: [id])
+  patient         Patient            @relation(fields: [patientId], references: [id])
+  professional    User               @relation(fields: [professionalId], references: [id])
+  appointmentType AppointmentType    @relation(fields: [appointmentTypeId], references: [id])
+  treatmentPlan   TreatmentPlan?     @relation(fields: [treatmentPlanId], references: [id])
+  assessment      PatientAssessment?
+  clinicalRecord  ClinicalRecord?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -267,4 +276,149 @@ model AppointmentType {
   appointments Appointment[]
 
   @@map("appointment_types")
+}
+
+enum QuestionType {
+  YES_NO
+  SHORT_TEXT
+  LONG_TEXT
+  SINGLE_SELECT
+  MULTIPLE_SELECT
+  SCALE // 1-10 scale
+  DATE
+}
+
+model AnamnesisTemplate {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  clinicId    String
+  isActive    Boolean @default(true)
+
+  clinic      Clinic              @relation(fields: [clinicId], references: [id])
+  sections    AnamnesisSection[]
+  assessments PatientAssessment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("anamnesis_templates")
+}
+
+model AnamnesisSection {
+  id         String @id @default(uuid())
+  templateId String
+  title      String
+  order      Int
+
+  template  AnamnesisTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  questions AnamnesisQuestion[]
+
+  @@map("anamnesis_sections")
+}
+
+model AnamnesisQuestion {
+  id               String       @id @default(uuid())
+  sectionId        String
+  question         String
+  description      String?
+  type             QuestionType
+  isRequired       Boolean      @default(false)
+  order            Int
+  options          Json? // For select/checkbox options
+  parentQuestionId String? // For sub-questions
+  showCondition    Json? // Conditions to show this question
+
+  section        AnamnesisSection     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  parentQuestion AnamnesisQuestion?   @relation("SubQuestions", fields: [parentQuestionId], references: [id])
+  subQuestions   AnamnesisQuestion[]  @relation("SubQuestions")
+  responses      AssessmentResponse[]
+
+  @@map("anamnesis_questions")
+}
+
+model PatientAssessment {
+  id             String  @id @default(uuid())
+  patientId      String
+  appointmentId  String? @unique
+  templateId     String
+  professionalId String
+  clinicId       String
+  status         String  @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
+
+  patient      Patient              @relation(fields: [patientId], references: [id])
+  appointment  Appointment?         @relation(fields: [appointmentId], references: [id])
+  template     AnamnesisTemplate    @relation(fields: [templateId], references: [id])
+  professional User                 @relation(fields: [professionalId], references: [id])
+  clinic       Clinic               @relation(fields: [clinicId], references: [id])
+  responses    AssessmentResponse[]
+
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([patientId])
+  @@index([appointmentId])
+  @@map("patient_assessments")
+}
+
+model AssessmentResponse {
+  id           String @id @default(uuid())
+  assessmentId String
+  questionId   String
+  value        Json // Flexible storage for different response types
+
+  assessment PatientAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  question   AnamnesisQuestion @relation(fields: [questionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([assessmentId, questionId])
+  @@map("assessment_responses")
+}
+
+model ClinicalRecord {
+  id            String  @id @default(uuid())
+  appointmentId String  @unique
+  diagnosis     String? @db.Text
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("clinical_records")
+}
+
+model Attachment {
+  id          String  @id @default(uuid())
+  patientId   String
+  fileName    String
+  description String?
+  filePath    String // Path in Supabase storage
+  fileType    String // e.g., 'image/png', 'application/pdf'
+  size        Int // in bytes
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("attachments")
+}
+
+model BeforeAfterImage {
+  id              String  @id @default(uuid())
+  patientId       String
+  treatmentPlanId String? // Link to a specific treatment
+  description     String?
+  beforeImagePath String
+  afterImagePath  String?
+
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  treatmentPlan TreatmentPlan? @relation(fields: [treatmentPlanId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("before_after_images")
 }
