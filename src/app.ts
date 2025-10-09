@@ -17,7 +17,7 @@ export const app = fastify({
 });
 
 app.register(cors, {
-  origin: ["http://localhost:3000", "https://estetica.gwmaccess.com"],
+  origin: ["http://localhost:3000", "https://estetica-front-pi.vercel.app"],
   methods: ["GET", "POST", "PUT", "DELETE"],
 });
 
