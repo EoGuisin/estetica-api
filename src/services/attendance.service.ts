@@ -1,10 +1,16 @@
 import { prisma } from "../lib/prisma";
 import { supabase } from "../lib/supabase";
 import { randomUUID } from "crypto";
-import { saveAttachmentSchema } from "../schemas/attendance.schema";
+import {
+  saveAttachmentSchema,
+  saveBeforeAfterSchema,
+} from "../schemas/attendance.schema";
 import { z } from "zod";
+import { DocumentType } from "@prisma/client";
 
 const ATTACHMENTS_BUCKET = "attachments";
+const BEFORE_AFTER_BUCKET = "before-after";
+const DOCUMENTS_BUCKET = "documents";
 
 export class AttendanceService {
   static async getAttendanceData(appointmentId: string, clinicId: string) {
@@ -59,18 +65,27 @@ export class AttendanceService {
       orderBy: { createdAt: "desc" },
     });
 
-    // Add public URLs for images
-    const imagesWithUrls = beforeAfterImages.map((image) => ({
-      ...image,
-      beforeImagePath: supabase.storage
-        .from("before-after")
-        .getPublicUrl(image.beforeImagePath).data.publicUrl,
-      afterImagePath: image.afterImagePath
-        ? supabase.storage
-            .from("before-after")
-            .getPublicUrl(image.afterImagePath).data.publicUrl
-        : null,
-    }));
+    const imagesWithUrls = await Promise.all(
+      beforeAfterImages.map(async (image) => {
+        const { data: beforeData } = await supabase.storage
+          .from(BEFORE_AFTER_BUCKET)
+          .createSignedUrl(image.beforeImagePath, 60 * 5);
+
+        let afterSignedUrl = null;
+        if (image.afterImagePath) {
+          const { data: afterData } = await supabase.storage
+            .from(BEFORE_AFTER_BUCKET)
+            .createSignedUrl(image.afterImagePath, 60 * 5);
+          afterSignedUrl = afterData?.signedUrl ?? null;
+        }
+
+        return {
+          ...image,
+          beforeImagePath: beforeData?.signedUrl ?? "",
+          afterImagePath: afterSignedUrl,
+        };
+      })
+    );
 
     return {
       ...appointment,
@@ -105,13 +120,19 @@ export class AttendanceService {
       orderBy: { createdAt: "desc" },
     });
 
-    // Add public URLs for each attachment
-    return attachments.map((attachment) => {
-      const { data } = supabase.storage
-        .from(ATTACHMENTS_BUCKET)
-        .getPublicUrl(attachment.filePath);
-      return { ...attachment, publicUrl: data.publicUrl };
-    });
+    const attachmentsWithUrls = await Promise.all(
+      attachments.map(async (attachment) => {
+        let viewUrl: string | null = null;
+        if (attachment.fileType.startsWith("image/")) {
+          const { data } = await supabase.storage
+            .from(ATTACHMENTS_BUCKET)
+            .createSignedUrl(attachment.filePath, 60 * 5);
+          viewUrl = data?.signedUrl ?? null;
+        }
+        return { ...attachment, viewUrl };
+      })
+    );
+    return attachmentsWithUrls;
   }
 
   static async createSignedUploadUrl(data: {
@@ -177,5 +198,280 @@ export class AttendanceService {
     // ================= FIX IS HERE =================
     // The redundant "return;" has been removed.
     // ===============================================
+  }
+
+  static async getBeforeAfterImages(patientId: string) {
+    const images = await prisma.beforeAfterImage.findMany({
+      where: { patientId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const imagesWithUrls = await Promise.all(
+      images.map(async (image) => {
+        const { data: beforeData } = await supabase.storage
+          .from(BEFORE_AFTER_BUCKET)
+          .createSignedUrl(image.beforeImagePath, 60 * 5);
+
+        let afterSignedUrl: string | null = null;
+        if (image.afterImagePath) {
+          const { data: afterData } = await supabase.storage
+            .from(BEFORE_AFTER_BUCKET)
+            .createSignedUrl(image.afterImagePath, 60 * 5);
+          afterSignedUrl = afterData?.signedUrl ?? null;
+        }
+
+        return {
+          ...image,
+          beforeImageSignedUrl: beforeData?.signedUrl ?? null,
+          afterImageSignedUrl: afterSignedUrl,
+        };
+      })
+    );
+    return imagesWithUrls;
+  }
+
+  static async getBeforeAfterDownloadUrl(
+    imageId: string,
+    type: "before" | "after",
+    clinicId: string
+  ) {
+    const image = await prisma.beforeAfterImage.findFirstOrThrow({
+      where: { id: imageId, patient: { clinicId } },
+    });
+
+    const filePath =
+      type === "before" ? image.beforeImagePath : image.afterImagePath;
+
+    if (!filePath) {
+      throw new Error(`Image type '${type}' not found.`);
+    }
+
+    const { data, error } = await supabase.storage
+      .from(BEFORE_AFTER_BUCKET)
+      .createSignedUrl(filePath, 3600, {
+        download: `${type}-${image.id}.jpg`,
+      });
+
+    if (error || !data) {
+      throw new Error("Could not generate download URL");
+    }
+    return { signedUrl: data.signedUrl };
+  }
+
+  static async createBeforeAfterSignedUrl(data: {
+    fileName: string;
+    fileType: string;
+    patientId: string;
+    clinicId: string;
+    imageType: "before" | "after";
+  }) {
+    const fileExtension = data.fileName.split(".").pop();
+    const uniqueFileName = `${data.imageType}-${randomUUID()}.${fileExtension}`;
+    const filePath = `${data.clinicId}/${data.patientId}/${uniqueFileName}`;
+
+    const { data: signedUrlData, error } = await supabase.storage
+      .from(BEFORE_AFTER_BUCKET)
+      .createSignedUploadUrl(filePath);
+
+    if (error) {
+      console.error("Supabase signed URL error (before-after):", error);
+      throw new Error(
+        "Could not create signed upload URL for before/after image"
+      );
+    }
+
+    return { ...signedUrlData, filePath };
+  }
+
+  static async saveBeforeAfterImage(
+    data: z.infer<typeof saveBeforeAfterSchema>
+  ) {
+    return prisma.beforeAfterImage.create({
+      data: {
+        patientId: data.patientId,
+        treatmentPlanId: data.treatmentPlanId,
+        description: data.description,
+        beforeImagePath: data.beforeImagePath,
+        afterImagePath: data.afterImagePath,
+      },
+    });
+  }
+
+  static async updateAfterImage(imageId: string, afterImagePath: string) {
+    return prisma.beforeAfterImage.update({
+      where: { id: imageId },
+      data: { afterImagePath },
+    });
+  }
+
+  static async deleteBeforeAfterImage(imageId: string, clinicId: string) {
+    const image = await prisma.beforeAfterImage.findFirstOrThrow({
+      where: {
+        id: imageId,
+        patient: { clinicId }, // Garante que a imagem pertence à clínica do usuário
+      },
+    });
+
+    const filesToRemove = [image.beforeImagePath];
+    if (image.afterImagePath) {
+      filesToRemove.push(image.afterImagePath);
+    }
+
+    await supabase.storage.from(BEFORE_AFTER_BUCKET).remove(filesToRemove);
+
+    await prisma.beforeAfterImage.delete({
+      where: { id: imageId },
+    });
+  }
+
+  // List documents by patient and type
+  static async listDocuments(patientId: string, type: DocumentType) {
+    const documents = await prisma.patientDocument.findMany({
+      where: {
+        patientId,
+        type,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return documents;
+  }
+
+  // Create signed URL for document upload
+  static async createDocumentSignedUrl(data: {
+    fileName: string;
+    fileType: string;
+    patientId: string;
+    clinicId: string;
+    documentType: DocumentType;
+  }) {
+    const fileExtension = data.fileName.split(".").pop();
+    const uniqueFileName = `${data.documentType.toLowerCase()}-${randomUUID()}.${fileExtension}`;
+    const filePath = `${data.clinicId}/${data.patientId}/${uniqueFileName}`;
+
+    const { data: signedUrlData, error } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .createSignedUploadUrl(filePath);
+
+    if (error) {
+      console.error("Supabase signed URL error (documents):", error);
+      throw new Error("Could not create signed upload URL for document");
+    }
+
+    return { ...signedUrlData, filePath };
+  }
+
+  // Save document metadata to database
+  static async saveDocument(data: {
+    patientId: string;
+    fileName: string;
+    description?: string | null;
+    filePath: string;
+    fileType: string;
+    size: number;
+    documentType: DocumentType;
+  }) {
+    return prisma.patientDocument.create({
+      data: {
+        patientId: data.patientId,
+        fileName: data.fileName,
+        description: data.description,
+        filePath: data.filePath,
+        fileType: data.fileType,
+        size: data.size,
+        type: data.documentType,
+        status: "PENDING",
+      },
+    });
+  }
+
+  // Delete a document
+  static async deleteDocument(documentId: string, clinicId: string) {
+    const document = await prisma.patientDocument.findFirstOrThrow({
+      where: {
+        id: documentId,
+        patient: { clinicId },
+      },
+    });
+
+    // Remove from storage
+    if (document.filePath) {
+      const { error } = await supabase.storage
+        .from(DOCUMENTS_BUCKET)
+        .remove([document.filePath]);
+
+      if (error) {
+        console.error(
+          "Supabase storage deletion error (documents):",
+          error.message
+        );
+      }
+    }
+
+    // Delete from database
+    await prisma.patientDocument.delete({
+      where: { id: documentId },
+    });
+  }
+
+  // Get signed download URL
+  static async getDocumentDownloadUrl(documentId: string, clinicId: string) {
+    const document = await prisma.patientDocument.findFirstOrThrow({
+      where: {
+        id: documentId,
+        patient: { clinicId },
+      },
+    });
+
+    if (!document.filePath) {
+      throw new Error("Document file not found");
+    }
+
+    // Create a signed URL that expires in 1 hour
+    const { data, error } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .createSignedUrl(document.filePath, 3600); // 3600 seconds = 1 hour
+
+    if (error || !data) {
+      console.error("Error creating signed URL:", error);
+      throw new Error("Could not generate download URL");
+    }
+
+    return {
+      signedUrl: data.signedUrl,
+      fileName: document.fileName,
+      fileType: document.fileType,
+    };
+  }
+
+  static async getAttachmentDownloadUrl(
+    attachmentId: string,
+    clinicId: string
+  ) {
+    const attachment = await prisma.attachment.findFirstOrThrow({
+      where: {
+        id: attachmentId,
+        patient: { clinicId },
+      },
+    });
+
+    const { data, error } = await supabase.storage
+      .from(ATTACHMENTS_BUCKET)
+      .createSignedUrl(attachment.filePath, 3600, {
+        // 1 hour expiration
+        download: attachment.fileName, // This prompts a download with the correct filename
+      });
+
+    if (error || !data) {
+      console.error(
+        "Error creating signed download URL for attachment:",
+        error
+      );
+      throw new Error("Could not generate download URL");
+    }
+
+    return { signedUrl: data.signedUrl };
   }
 }

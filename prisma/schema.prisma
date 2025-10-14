@@ -123,8 +123,9 @@ model Patient {
   attachments       Attachment[]
   beforeAfterImages BeforeAfterImage[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  PatientDocument PatientDocument[]
 
   @@map("patients")
 }
@@ -421,4 +422,35 @@ model BeforeAfterImage {
   createdAt DateTime @default(now())
 
   @@map("before_after_images")
+}
+
+enum DocumentType {
+  TERM // Termo de Consentimento, LGPD, etc.
+  CONTRACT // Contrato de Prestação de Serviço
+}
+
+enum DocumentStatus {
+  PENDING // Aguardando assinatura
+  SIGNED // Assinado
+  CANCELED // Cancelado
+}
+
+model PatientDocument {
+  id          String         @id @default(uuid())
+  patientId   String
+  fileName    String
+  description String?
+  filePath    String // Path in Supabase storage
+  fileType    String // e.g., 'application/pdf', 'image/png'
+  size        Int // in bytes
+  type        DocumentType // TERM or CONTRACT
+  status      DocumentStatus @default(PENDING)
+  signedAt    DateTime?
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("patient_documents")
 }

@@ -7,7 +7,16 @@ import {
   attachmentParamsSchema,
   appointmentParamsSchema,
   patientParamsSchema,
+  createBeforeAfterSignedUrlSchema,
+  saveBeforeAfterSchema,
+  beforeAfterParamsSchema,
+  updateAfterImageSchema,
+  documentParamsSchema,
+  listDocumentsQuerySchema,
+  createDocumentSignedUrlSchema,
+  saveDocumentSchema,
 } from "../schemas/attendance.schema";
+import z from "zod";
 
 export class AttendanceController {
   static async getAttendanceData(request: FastifyRequest, reply: FastifyReply) {
@@ -68,5 +77,139 @@ export class AttendanceController {
 
     await AttendanceService.deleteAttachment(attachmentId, clinicId);
     return reply.status(204).send();
+  }
+
+  static async getBeforeAfterImages(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const { patientId } = patientParamsSchema.parse(request.params);
+    const images = await AttendanceService.getBeforeAfterImages(patientId);
+    return reply.send(images);
+  }
+
+  static async createBeforeAfterSignedUrl(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const { clinicId } = request.user;
+    const body = createBeforeAfterSignedUrlSchema.parse(request.body);
+
+    const signedUrlData = await AttendanceService.createBeforeAfterSignedUrl({
+      ...body,
+      clinicId,
+    });
+    return reply.send(signedUrlData);
+  }
+
+  static async saveBeforeAfterImage(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const data = saveBeforeAfterSchema.parse(request.body);
+    const image = await AttendanceService.saveBeforeAfterImage(data);
+    return reply.status(201).send(image);
+  }
+
+  static async updateAfterImage(request: FastifyRequest, reply: FastifyReply) {
+    const { imageId } = beforeAfterParamsSchema.parse(request.params);
+    const { afterImagePath } = updateAfterImageSchema.parse(request.body);
+
+    const updatedImage = await AttendanceService.updateAfterImage(
+      imageId,
+      afterImagePath
+    );
+    return reply.send(updatedImage);
+  }
+
+  static async deleteBeforeAfterImage(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const { imageId } = beforeAfterParamsSchema.parse(request.params);
+    const { clinicId } = request.user;
+
+    await AttendanceService.deleteBeforeAfterImage(imageId, clinicId);
+    return reply.status(204).send();
+  }
+
+  static async listDocuments(request: FastifyRequest, reply: FastifyReply) {
+    const { patientId } = patientParamsSchema.parse(request.params);
+    const { type } = listDocumentsQuerySchema.parse(request.query);
+
+    const documents = await AttendanceService.listDocuments(patientId, type);
+    return reply.send(documents);
+  }
+
+  static async createDocumentSignedUrl(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const { clinicId } = request.user;
+    const body = createDocumentSignedUrlSchema.parse(request.body);
+
+    const signedUrlData = await AttendanceService.createDocumentSignedUrl({
+      ...body,
+      clinicId,
+    });
+    return reply.send(signedUrlData);
+  }
+
+  static async saveDocument(request: FastifyRequest, reply: FastifyReply) {
+    const data = saveDocumentSchema.parse(request.body);
+
+    const document = await AttendanceService.saveDocument(data);
+    return reply.status(201).send(document);
+  }
+
+  static async deleteDocument(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request.user;
+    const { documentId } = documentParamsSchema.parse(request.params);
+
+    await AttendanceService.deleteDocument(documentId, clinicId);
+    return reply.status(204).send();
+  }
+
+  static async downloadDocument(request: FastifyRequest, reply: FastifyReply) {
+    const { documentId } = documentParamsSchema.parse(request.params);
+    const { clinicId } = request.user;
+
+    const { signedUrl, fileName, fileType } =
+      await AttendanceService.getDocumentDownloadUrl(documentId, clinicId);
+
+    return reply.redirect(signedUrl, 302);
+  }
+
+  static async downloadAttachment(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const { attachmentId } = attachmentParamsSchema.parse(request.params);
+    const { clinicId } = request.user;
+
+    const { signedUrl } = await AttendanceService.getAttachmentDownloadUrl(
+      attachmentId,
+      clinicId
+    );
+
+    return reply.redirect(signedUrl);
+  }
+
+  static async downloadBeforeAfterImage(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const { imageId } = beforeAfterParamsSchema.parse(request.params);
+    const { type } = z
+      .object({ type: z.enum(["before", "after"]) })
+      .parse(request.query);
+    const { clinicId } = request.user;
+
+    const { signedUrl } = await AttendanceService.getBeforeAfterDownloadUrl(
+      imageId,
+      type,
+      clinicId
+    );
+    return reply.redirect(signedUrl);
   }
 }
