@@ -78,3 +78,7 @@ export const saveDocumentSchema = z.object({
 export const documentParamsSchema = z.object({
   documentId: z.string().uuid(),
 });
+
+export const updateDiagnosisSchema = z.object({
+  diagnosis: z.string().optional().nullable(),
+});

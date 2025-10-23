@@ -43,8 +43,17 @@ model Clinic {
   anamnesisTemplates AnamnesisTemplate[]
   patientAssessments PatientAssessment[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  CommissionPlan      CommissionPlan[]
+  ProductCategory     ProductCategory[]
+  ProductBrand        ProductBrand[]
+  Supplier            Supplier[]
+  Product             Product[]
+  paymentInstallments PaymentInstallment[]
+  expenseCategories   ExpenseCategory[]
+  expenses            Expense[]
+  commissionRecords   CommissionRecord[]
 
   @@map("clinics")
 }
@@ -62,34 +71,183 @@ model PasswordResetToken {
 }
 
 model User {
-  id                  String               @id @default(uuid())
-  isProfessional      Boolean              @default(false)
-  fullName            String
-  cpf                 String?              @unique
-  email               String               @unique
-  phone               String?
-  passwordHash        String
-  electronicSignature String?
-  scheduleStartHour   String? // e.g., "08:00"
-  scheduleEndHour     String? // e.g., "18:00"
-  appointmentDuration Int? // In minutes
-  notes               String?
-  color               String?              @default("#ffffff") // Cor para o calendário
-  clinicId            String
-  roleId              String
-  passwordResetTokens PasswordResetToken[]
+  id                          String               @id @default(uuid())
+  isProfessional              Boolean              @default(false)
+  fullName                    String
+  cpf                         String?              @unique
+  email                       String               @unique
+  phone                       String?
+  passwordHash                String
+  electronicSignature         String?
+  scheduleStartHour           String? // e.g., "08:00"
+  scheduleEndHour             String? // e.g., "18:00"
+  appointmentDuration         Int? // In minutes
+  notes                       String?
+  color                       String?              @default("#ffffff")
+  clinicId                    String
+  roleId                      String
+  commissionPlanId            String?
+  professionalCouncilRegistry String?
+  passwordResetTokens         PasswordResetToken[]
 
-  clinic       Clinic              @relation(fields: [clinicId], references: [id])
-  role         Role                @relation(fields: [roleId], references: [id])
-  specialties  Specialty[]         @relation("ProfessionalSpecialties")
-  appointments Appointment[]
-  sales        TreatmentPlan[]
-  assessments  PatientAssessment[]
+  clinic         Clinic              @relation(fields: [clinicId], references: [id])
+  role           Role                @relation(fields: [roleId], references: [id])
+  specialties    Specialty[]         @relation("ProfessionalSpecialties")
+  appointments   Appointment[]
+  sales          TreatmentPlan[]
+  assessments    PatientAssessment[]
+  medicalReports MedicalReport[]
+  prescriptions  Prescription[]
+  CommissionPlan CommissionPlan?     @relation(fields: [commissionPlanId], references: [id])
+
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  ProfessionalCouncil   ProfessionalCouncil? @relation(fields: [professionalCouncilId], references: [id])
+  professionalCouncilId String?
+  commissions           CommissionRecord[]
+
+  @@map("users")
+}
+
+model CommissionPlan {
+  id          String  @id @default(uuid())
+  name        String // Ex: "Plano Profissional Sênior", "Comissão Padrão 2025"
+  description String?
+  clinicId    String
+  isActive    Boolean @default(true)
+
+  clinic Clinic           @relation(fields: [clinicId], references: [id])
+  tiers  CommissionTier[] // As faixas de comissão dentro deste plano
+  users  User[] // Profissionais associados a este plano
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@map("users")
+  @@map("commission_plans")
+}
+
+model ProfessionalCouncil {
+  id          String  @id @default(uuid())
+  name        String  @unique // Ex: "CRM", "COREN", "CRF"
+  description String? // Ex: "Conselho Regional de Medicina"
+
+  users User[] // Lista de usuários associados a este conselho
+
+  @@map("professional_councils")
+}
+
+model ProductCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  clinicId    String
+  clinic      Clinic    @relation(fields: [clinicId], references: [id])
+  products    Product[]
+
+  @@unique([name, clinicId])
+  @@map("product_categories")
+}
+
+// Modelo para as Marcas dos Produtos
+model ProductBrand {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  clinicId    String
+
+  clinic   Clinic    @relation(fields: [clinicId], references: [id])
+  products Product[]
+
+  @@unique([name, clinicId])
+  @@map("product_brands")
+}
+
+// Modelo para os Fornecedores
+model Supplier {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  clinicId    String
+
+  clinic         Clinic          @relation(fields: [clinicId], references: [id])
+  stockMovements StockMovement[]
+  Expense        Expense[]
+
+  @@unique([name, clinicId])
+  @@map("suppliers")
+}
+
+model Product {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  sku         String? @unique // Código de barras ou SKU para identificação única
+
+  // Relacionamentos com os catálogos
+  categoryId String
+  brandId    String
+  clinicId   String
+
+  category ProductCategory @relation(fields: [categoryId], references: [id])
+  brand    ProductBrand    @relation(fields: [brandId], references: [id])
+  clinic   Clinic          @relation(fields: [clinicId], references: [id])
+
+  // Controle de Estoque
+  currentStock      Int  @default(0) // Quantidade atual em estoque
+  lowStockThreshold Int? @default(0) // Limite para alerta de estoque baixo
+
+  stockMovements StockMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sku, clinicId])
+  @@map("products")
+}
+
+enum StockMovementType {
+  ENTRY // Entrada de produto (compra)
+  EXIT // Saída de produto (uso em procedimento, venda, perda)
+}
+
+model StockMovement {
+  id            String            @id @default(uuid())
+  type          StockMovementType // Se é ENTRADA ou SAÍDA
+  quantity      Int // Quantidade de itens na movimentação
+  date          DateTime // Data em que a movimentação ocorreu
+  totalValue    Decimal?          @db.Decimal(10, 2) // Valor total (geralmente para entradas)
+  invoiceNumber String? // Número da nota fiscal (geralmente para entradas)
+  notes         String? // Observações
+
+  // Relacionamentos
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+
+  // Opcional: Relacionar a saída a um procedimento/atendimento
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("stock_movements")
+}
+
+model CommissionTier {
+  id               String   @id @default(uuid())
+  commissionPlanId String
+  minThreshold     Decimal  @db.Decimal(10, 2) // Valor mínimo de faturamento para esta faixa
+  maxThreshold     Decimal? @db.Decimal(10, 2) // Valor máximo. Nulo significa "acima do mínimo"
+  percentage       Decimal  @db.Decimal(5, 2) // A porcentagem de comissão
+
+  commissionPlan CommissionPlan @relation(fields: [commissionPlanId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("commission_tiers")
 }
 
 model Patient {
@@ -126,6 +284,8 @@ model Patient {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   PatientDocument PatientDocument[]
+  MedicalReport   MedicalReport[]
+  Prescription    Prescription[]
 
   @@map("patients")
 }
@@ -187,7 +347,8 @@ model Specialty {
   name String @unique
 
   procedures    Procedure[]
-  professionals User[]      @relation("ProfessionalSpecialties")
+  professionals User[]              @relation("ProfessionalSpecialties")
+  templates     SpecialtyTemplate[]
 
   @@map("specialties")
 }
@@ -216,12 +377,14 @@ model TreatmentPlan {
   surcharge          Decimal? @db.Decimal(10, 2)
   total              Decimal  @db.Decimal(10, 2)
 
-  patient           Patient                  @relation(fields: [patientId], references: [id])
-  clinic            Clinic                   @relation(fields: [clinicId], references: [id])
-  seller            User                     @relation(fields: [sellerId], references: [id])
-  procedures        TreatmentPlanProcedure[]
-  appointments      Appointment[]
-  beforeAfterImages BeforeAfterImage[]
+  patient             Patient                  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinic              Clinic                   @relation(fields: [clinicId], references: [id])
+  seller              User                     @relation(fields: [sellerId], references: [id])
+  procedures          TreatmentPlanProcedure[]
+  appointments        Appointment[]
+  beforeAfterImages   BeforeAfterImage[]
+  paymentInstallments PaymentInstallment[]
+  commissionRecords   CommissionRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -257,12 +420,13 @@ model Appointment {
   appointmentTypeId String
   treatmentPlanId   String? // Optional, if it's a session from a plan
 
-  patient         Patient            @relation(fields: [patientId], references: [id])
+  patient         Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
   professional    User               @relation(fields: [professionalId], references: [id])
   appointmentType AppointmentType    @relation(fields: [appointmentTypeId], references: [id])
   treatmentPlan   TreatmentPlan?     @relation(fields: [treatmentPlanId], references: [id])
   assessment      PatientAssessment?
   clinicalRecord  ClinicalRecord?
+  StockMovement   StockMovement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -347,7 +511,7 @@ model PatientAssessment {
   clinicId       String
   status         String  @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
 
-  patient      Patient              @relation(fields: [patientId], references: [id])
+  patient      Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
   appointment  Appointment?         @relation(fields: [appointmentId], references: [id])
   template     AnamnesisTemplate    @relation(fields: [templateId], references: [id])
   professional User                 @relation(fields: [professionalId], references: [id])
@@ -438,19 +602,186 @@ enum DocumentStatus {
 model PatientDocument {
   id          String         @id @default(uuid())
   patientId   String
+  templateId  String? // Link to the template used
   fileName    String
   description String?
-  filePath    String // Path in Supabase storage
-  fileType    String // e.g., 'application/pdf', 'image/png'
-  size        Int // in bytes
-  type        DocumentType // TERM or CONTRACT
+  filePath    String
+  fileType    String
+  size        Int
+  type        DocumentType
   status      DocumentStatus @default(PENDING)
   signedAt    DateTime?
 
-  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient  Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  template SpecialtyTemplate? @relation(fields: [templateId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("patient_documents")
+}
+
+model SpecialtyTemplate {
+  id          String       @id @default(uuid())
+  specialtyId String
+  name        String // Template name (e.g., "Termo Padrão Botox")
+  content     String       @db.Text // HTML content with variables
+  type        DocumentType // TERM or CONTRACT
+  isActive    Boolean      @default(true)
+
+  specialty        Specialty         @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+  patientDocuments PatientDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("specialty_templates")
+}
+
+model MedicalReport {
+  id             String @id @default(uuid())
+  content        String @db.Text
+  patientId      String
+  professionalId String
+
+  patient      Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  professional User    @relation(fields: [professionalId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("medical_reports")
+}
+
+model Prescription {
+  id             String @id @default(uuid())
+  content        String @db.Text
+  patientId      String
+  professionalId String
+
+  patient      Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  professional User    @relation(fields: [professionalId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("prescriptions")
+}
+
+// ----------------------------------------
+// Financial Models
+// ----------------------------------------
+
+enum PaymentStatus {
+  PENDING // Parcela aguardando pagamento
+  PAID // Parcela paga
+  OVERDUE // Parcela vencida e não paga
+  CANCELED // Parcela cancelada (ex: plano cancelado)
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  BANK_TRANSFER // PIX, TED, DOC
+  CASH
+  CHECK // Cheque
+  OTHER
+}
+
+// Representa cada parcela individual de um TreatmentPlan
+model PaymentInstallment {
+  id                String         @id @default(uuid())
+  treatmentPlanId   String
+  installmentNumber Int // Número da parcela (1, 2, 3...)
+  dueDate           DateTime // Data de vencimento da parcela
+  amountDue         Decimal        @db.Decimal(10, 2) // Valor desta parcela
+  status            PaymentStatus  @default(PENDING)
+  paidAmount        Decimal?       @db.Decimal(10, 2) // Valor efetivamente pago (pode ser parcial)
+  paymentDate       DateTime? // Data em que o pagamento foi recebido
+  paymentMethod     PaymentMethod? // Como foi pago
+  notes             String? // Observações sobre o pagamento
+  clinicId          String // Para garantir o escopo
+
+  treatmentPlan TreatmentPlan @relation(fields: [treatmentPlanId], references: [id], onDelete: Cascade)
+  clinic        Clinic        @relation(fields: [clinicId], references: [id])
+
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  CommissionRecord CommissionRecord[]
+
+  @@index([treatmentPlanId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([clinicId])
+  @@map("payment_installments")
+}
+
+// Categoria para Despesas (Contas a Pagar)
+model ExpenseCategory {
+  id       String    @id @default(uuid())
+  name     String
+  clinicId String
+  clinic   Clinic    @relation(fields: [clinicId], references: [id])
+  expenses Expense[]
+
+  @@unique([name, clinicId])
+  @@map("expense_categories")
+}
+
+// Representa as Contas a Pagar da clínica
+model Expense {
+  id          String        @id @default(uuid())
+  clinicId    String
+  description String // Ex: Aluguel Outubro, Compra Botox Rennova NF 123
+  amount      Decimal       @db.Decimal(10, 2) // Valor da despesa
+  dueDate     DateTime // Vencimento
+  paymentDate DateTime? // Data do pagamento
+  status      PaymentStatus @default(PENDING) // PENDING, PAID, OVERDUE
+  supplierId  String? // Opcional: Link para o fornecedor
+  categoryId  String? // Opcional: Categoria da despesa
+  notes       String?
+
+  clinic   Clinic           @relation(fields: [clinicId], references: [id])
+  supplier Supplier?        @relation(fields: [supplierId], references: [id])
+  category ExpenseCategory? @relation(fields: [categoryId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clinicId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("expenses")
+}
+
+enum CommissionStatus {
+  PENDING // Comissão calculada, aguardando pagamento ao profissional
+  PAID // Comissão paga ao profissional
+  CANCELED // Comissão cancelada (ex: venda desfeita)
+}
+
+// Registra as comissões calculadas para cada profissional
+model CommissionRecord {
+  id                   String           @id @default(uuid())
+  clinicId             String
+  professionalId       String // Profissional que receberá
+  treatmentPlanId      String // Venda que originou a comissão
+  paymentInstallmentId String? // Parcela que 'liberou' esta comissão (opcional, depende da regra)
+  calculatedAmount     Decimal          @db.Decimal(10, 2) // Valor da comissão
+  calculationDate      DateTime         @default(now()) // Quando foi calculada
+  status               CommissionStatus @default(PENDING)
+  paymentDate          DateTime? // Quando a clínica pagou ao profissional
+
+  clinic             Clinic              @relation(fields: [clinicId], references: [id])
+  professional       User                @relation(fields: [professionalId], references: [id])
+  treatmentPlan      TreatmentPlan       @relation(fields: [treatmentPlanId], references: [id])
+  paymentInstallment PaymentInstallment? @relation(fields: [paymentInstallmentId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clinicId])
+  @@index([professionalId])
+  @@index([status])
+  @@map("commission_records")
 }

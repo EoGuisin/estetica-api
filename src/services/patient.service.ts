@@ -165,6 +165,7 @@ export class PatientService {
 
     return prisma.$transaction(async (tx) => {
       await tx.patient.delete({ where: { id } });
+
       if (patient.addressId) {
         await tx.address.delete({ where: { id: patient.addressId } });
       }

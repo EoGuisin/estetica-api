@@ -24,4 +24,18 @@ export const createAppointmentSchema = z.object({
   treatmentPlanId: z.string().uuid().optional().nullable(),
 });
 
+export const updateAppointmentStatusSchema = z.object({
+  status: z.enum([
+    "SCHEDULED",
+    "CONFIRMED",
+    "CANCELED",
+    "COMPLETED",
+    "IN_PROGRESS",
+  ]),
+});
+
+export const appointmentParamsSchema = z.object({
+  appointmentId: z.string().uuid(),
+});
+
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;

@@ -37,8 +37,8 @@ export class PatientController {
       document?: string;
     };
 
-    const pageNumber = parseInt(page, 10);
-    const pageSizeNumber = parseInt(pageSize, 10);
+    const pageNumber = Number.parseInt(page, 10);
+    const pageSizeNumber = Number.parseInt(pageSize, 10);
 
     const result = await PatientService.list(
       clinicId,

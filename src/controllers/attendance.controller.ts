@@ -15,10 +15,43 @@ import {
   listDocumentsQuerySchema,
   createDocumentSignedUrlSchema,
   saveDocumentSchema,
+  updateDiagnosisSchema,
 } from "../schemas/attendance.schema";
 import z from "zod";
 
 export class AttendanceController {
+  static async getDocumentTemplates(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const { patientId } = patientParamsSchema.parse(request.params);
+    const { type } = listDocumentsQuerySchema.parse(request.query);
+
+    const templates = await AttendanceService.getTemplatesForPatient(
+      patientId,
+      type
+    );
+    return reply.send(templates);
+  }
+
+  static async generateDocument(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request.user;
+    const { patientId, templateId } = z
+      .object({
+        patientId: z.string().uuid(),
+        templateId: z.string().uuid(),
+      })
+      .parse(request.body);
+
+    const document = await AttendanceService.generateDocumentFromTemplate({
+      patientId,
+      templateId,
+      clinicId,
+    });
+
+    return reply.status(201).send(document);
+  }
+
   static async getAttendanceData(request: FastifyRequest, reply: FastifyReply) {
     const { appointmentId } = appointmentParamsSchema.parse(request.params);
     const { clinicId } = request.user;
@@ -211,5 +244,16 @@ export class AttendanceController {
       clinicId
     );
     return reply.redirect(signedUrl);
+  }
+
+  static async updateDiagnosis(request: FastifyRequest, reply: FastifyReply) {
+    const { appointmentId } = appointmentParamsSchema.parse(request.params);
+    const { diagnosis } = updateDiagnosisSchema.parse(request.body);
+
+    const clinicalRecord = await AttendanceService.saveDiagnosis(
+      appointmentId,
+      diagnosis
+    );
+    return reply.send(clinicalRecord);
   }
 }

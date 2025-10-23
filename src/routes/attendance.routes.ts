@@ -60,4 +60,12 @@ export async function attendanceRoutes(app: FastifyInstance) {
     "/documents/:documentId/download",
     AttendanceController.downloadDocument
   );
+
+  app.get(
+    "/documents/templates/:patientId",
+    AttendanceController.getDocumentTemplates
+  );
+  app.post("/documents/generate", AttendanceController.generateDocument);
+
+  app.put("/diagnosis/:appointmentId", AttendanceController.updateDiagnosis);
 }

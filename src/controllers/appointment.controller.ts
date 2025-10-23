@@ -1,6 +1,9 @@
-// src/controllers/appointment.controller.ts
 import { FastifyRequest, FastifyReply } from "fastify";
-import { createAppointmentSchema } from "../schemas/appointment.schema";
+import {
+  appointmentParamsSchema,
+  createAppointmentSchema,
+  updateAppointmentStatusSchema,
+} from "../schemas/appointment.schema";
 import { AppointmentService } from "../services/appointment.service";
 
 export class AppointmentController {
@@ -8,8 +11,20 @@ export class AppointmentController {
     const { clinicId } = request.user;
     const data = createAppointmentSchema.parse(request.body);
 
-    const appointment = await AppointmentService.create(clinicId, data);
-    return reply.status(201).send(appointment);
+    try {
+      const appointment = await AppointmentService.create(clinicId, data);
+      return reply.status(201).send(appointment);
+    } catch (error: any) {
+      if (error.name === "SessionLimitError") {
+        return reply.status(409).send({
+          message: error.message,
+          details: `Sessões já agendadas em: ${error.scheduledDates.join(
+            ", "
+          )}.`,
+        });
+      }
+      throw error;
+    }
   }
 
   static async listPatients(request: FastifyRequest, reply: FastifyReply) {
@@ -25,11 +40,28 @@ export class AppointmentController {
     const types = await AppointmentService.listAppointmentTypes();
     return reply.send(types);
   }
-  
-  static async listTreatmentPlansByPatient(request: FastifyRequest, reply: FastifyReply) {
+
+  static async listTreatmentPlansByPatient(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
     const { clinicId } = request.user;
     const { patientId } = request.params as { patientId: string };
-    const plans = await AppointmentService.listTreatmentPlansByPatient(clinicId, patientId);
+    const plans = await AppointmentService.listTreatmentPlansByPatient(
+      clinicId,
+      patientId
+    );
     return reply.send(plans);
+  }
+
+  static async updateStatus(request: FastifyRequest, reply: FastifyReply) {
+    const { appointmentId } = appointmentParamsSchema.parse(request.params);
+    const { status } = updateAppointmentStatusSchema.parse(request.body);
+
+    const appointment = await AppointmentService.updateStatus(
+      appointmentId,
+      status
+    );
+    return reply.send(appointment);
   }
 }

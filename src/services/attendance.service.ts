@@ -7,12 +7,222 @@ import {
 } from "../schemas/attendance.schema";
 import { z } from "zod";
 import { DocumentType } from "@prisma/client";
+import { substituteVariables } from "../lib/templateVariables";
+import PdfService from "./pdf.service";
 
 const ATTACHMENTS_BUCKET = "attachments";
 const BEFORE_AFTER_BUCKET = "before-after";
 const DOCUMENTS_BUCKET = "documents";
 
 export class AttendanceService {
+  static async getTemplatesForPatient(
+    patientId: string,
+    type: DocumentType
+  ): Promise<any[]> {
+    // Get patient's treatment plan to find specialty
+    const patient = await prisma.patient.findUniqueOrThrow({
+      where: { id: patientId },
+      include: {
+        treatmentPlans: {
+          include: {
+            procedures: {
+              include: {
+                procedure: {
+                  include: {
+                    specialty: {
+                      include: {
+                        templates: {
+                          where: {
+                            type,
+                            isActive: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    if (!patient.treatmentPlans.length) {
+      return [];
+    }
+
+    const specialty =
+      patient.treatmentPlans[0].procedures[0]?.procedure?.specialty;
+
+    if (!specialty) {
+      return [];
+    }
+
+    return specialty.templates || [];
+  }
+
+  static async generateDocumentFromTemplate(data: {
+    patientId: string;
+    templateId: string;
+    clinicId: string;
+  }) {
+    // Get template
+    const template = await prisma.specialtyTemplate.findUniqueOrThrow({
+      where: { id: data.templateId },
+      include: { specialty: true },
+    });
+
+    // Get patient data
+    const patient = await prisma.patient.findUniqueOrThrow({
+      where: { id: data.patientId },
+      include: {
+        address: true,
+        phones: true,
+        treatmentPlans: {
+          include: {
+            procedures: {
+              include: {
+                procedure: {
+                  include: {
+                    specialty: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    // Get clinic data
+    const clinic = await prisma.clinic.findUniqueOrThrow({
+      where: { id: data.clinicId },
+      include: { address: true },
+    });
+
+    // Prepare treatment plan data
+    let treatmentPlanData = null;
+    if (patient.treatmentPlans.length > 0) {
+      const plan = patient.treatmentPlans[0];
+      const procedure = plan.procedures[0];
+      treatmentPlanData = {
+        specialty: procedure?.procedure?.specialty?.name,
+        procedure: procedure?.procedure?.name,
+        sessions: procedure?.contractedSessions,
+        total: plan.total,
+      };
+    }
+
+    // Substitute variables in template
+    const filledContent = substituteVariables(template.content, {
+      patient,
+      clinic,
+      treatmentPlan: treatmentPlanData,
+    });
+
+    // Generate unique filename
+    const timestamp = Date.now();
+    const fileName = `${template.type.toLowerCase()}_${patient.name.replace(
+      / /g,
+      "_"
+    )}_${timestamp}.pdf`;
+    const filePath = `${data.clinicId}/${data.patientId}/${fileName}`;
+
+    // Generate PDF
+    const pdfBuffer = await this.generatePDFFromHTML(
+      filledContent,
+      clinic,
+      template.name
+    );
+
+    // Upload to Supabase
+    const { error: uploadError } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .upload(filePath, pdfBuffer, {
+        contentType: "application/pdf",
+      });
+
+    if (uploadError) {
+      console.error("Error uploading PDF:", uploadError);
+      throw new Error("Could not upload generated document");
+    }
+
+    // Save to database
+    const document = await prisma.patientDocument.create({
+      data: {
+        patientId: data.patientId,
+        templateId: data.templateId,
+        fileName,
+        filePath,
+        fileType: "application/pdf",
+        size: pdfBuffer.length,
+        type: template.type,
+        status: "PENDING",
+      },
+    });
+
+    return document;
+  }
+
+  private static async generatePDFFromHTML(
+    content: string,
+    clinic: any,
+    documentTitle: string
+  ): Promise<Buffer> {
+    const headerTemplate = `
+    <div style="font-family: Arial, sans-serif; font-size: 9px; text-align: center; border-bottom: 1px solid #ccc; padding: 10px; width: 100%;">
+      <h1 style="margin: 0; font-size: 14px;">${clinic.name}</h1>
+      ${
+        clinic.address
+          ? `<p style="margin: 2px 0;">${clinic.address.street}, ${clinic.address.number} - ${clinic.address.city}/${clinic.address.state}</p>`
+          : ""
+      }
+      <p style="margin: 2px 0;">CNPJ: ${clinic.taxId}</p>
+    </div>
+  `;
+
+    const fullHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>${documentTitle}</title>
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            padding: 2cm 1.5cm;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #333;
+          }
+        </style>
+      </head>
+      <body>
+        ${content}
+      </body>
+    </html>
+  `;
+
+    const pdfBuffer = await PdfService.generatePdfFromHtml(fullHtml, {
+      format: "A4",
+      displayHeaderFooter: true,
+      headerTemplate,
+      footerTemplate: `
+      <div style="font-family: Arial, sans-serif; font-size: 8px; text-align: center; width: 100%;">
+        <span class="pageNumber"></span> / <span class="totalPages"></span>
+      </div>
+    `,
+      margin: { top: "120px", bottom: "60px", left: "20px", right: "20px" },
+    });
+
+    return pdfBuffer;
+  }
+
   static async getAttendanceData(appointmentId: string, clinicId: string) {
     const appointment = await prisma.appointment.findFirstOrThrow({
       where: { id: appointmentId, patient: { clinicId } },
@@ -56,6 +266,7 @@ export class AttendanceService {
         appointmentType: true,
         professional: true,
         assessment: { select: { id: true } },
+        clinicalRecord: true,
       },
       orderBy: { date: "desc" },
     });

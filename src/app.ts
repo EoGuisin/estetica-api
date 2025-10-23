@@ -11,6 +11,20 @@ import { specialtyRoutes } from "./routes/specialty.routes";
 import { treatmentPlanRoutes } from "./routes/treatmentPlan.routes";
 import { anamnesisRoutes } from "./routes/anamnesis.routes";
 import { attendanceRoutes } from "./routes/attendance.routes";
+import { specialtyTemplateRoutes } from "./routes/specialtyTemplate.routes";
+import { medicalReportRoutes } from "./routes/medicalReport.routes";
+import { prescriptionRoutes } from "./routes/prescription.routes";
+import { professionalCouncilRoutes } from "./routes/professionalCouncil.routes";
+import { productCategoryRoutes } from "./routes/productCategory.routes";
+import { productBrandRoutes } from "./routes/productBrand.routes";
+import { supplierRoutes } from "./routes/supplier.routes";
+import { productRoutes } from "./routes/product.routes";
+import { stockMovementRoutes } from "./routes/stockMovement.routes";
+import { commissionPlanRoutes } from "./routes/commissionPlan.routes";
+import { paymentInstallmentRoutes } from "./routes/paymentInstallment.routes";
+import { expenseRoutes } from "./routes/expense.routes";
+import { expenseCategoryRoutes } from "./routes/expenseCategory.routes";
+import { commissionRecordRoutes } from "./routes/commissionRecord.routes";
 
 export const app = fastify({
   bodyLimit: 5 * 1024 * 1024,
@@ -18,7 +32,7 @@ export const app = fastify({
 
 app.register(cors, {
   origin: ["http://localhost:3000", "https://estetica-front-pi.vercel.app"],
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
 });
 
 app.get("/", () => {
@@ -35,6 +49,20 @@ app.register(specialtyRoutes, { prefix: "/specialties" });
 app.register(treatmentPlanRoutes, { prefix: "/treatment-plans" });
 app.register(anamnesisRoutes, { prefix: "/anamnesis" });
 app.register(attendanceRoutes, { prefix: "/attendance" });
+app.register(specialtyTemplateRoutes, { prefix: "/specialty-templates" });
+app.register(medicalReportRoutes, { prefix: "/medical-reports" });
+app.register(prescriptionRoutes, { prefix: "/prescriptions" });
+app.register(professionalCouncilRoutes, { prefix: "/professional-councils" });
+app.register(productCategoryRoutes, { prefix: "/product-categories" });
+app.register(productBrandRoutes, { prefix: "/product-brands" });
+app.register(supplierRoutes, { prefix: "/suppliers" });
+app.register(productRoutes, { prefix: "/products" });
+app.register(stockMovementRoutes, { prefix: "/stock-movements" });
+app.register(commissionPlanRoutes, { prefix: "/commission-plans" });
+app.register(paymentInstallmentRoutes, { prefix: "/payment-installments" });
+app.register(expenseRoutes, { prefix: "/expenses" });
+app.register(expenseCategoryRoutes, { prefix: "/expense-categories" });
+app.register(commissionRecordRoutes, { prefix: "/commissions" });
 
 app.setErrorHandler((error, request, reply) => {
   if (error.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
