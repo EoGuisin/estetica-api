@@ -1,5 +1,9 @@
 import { prisma } from "../lib/prisma";
-import { Prisma, CommissionStatus } from "@prisma/client";
+import {
+  Prisma,
+  CommissionStatus,
+  CommissionTriggerEvent,
+} from "@prisma/client";
 import { MarkCommissionAsPaidInput } from "../schemas/commissionRecord.schema";
 
 // Interface interna para criação
@@ -61,29 +65,14 @@ export class CommissionRecordService {
   static async calculateAndRecordCommissionForPlan(
     tx: Prisma.TransactionClient,
     treatmentPlanId: string,
-    paymentInstallmentId: string
+    paymentInstallmentId?: string // Opcional: ID da parcela que foi paga (relevante para alguns gatilhos)
   ) {
-    // 1. Verifica idempotência
-    const existingCommission = await tx.commissionRecord.findFirst({
-      where: {
-        treatmentPlanId: treatmentPlanId,
-        status: { in: [CommissionStatus.PENDING, CommissionStatus.PAID] },
-      },
-    });
-    if (existingCommission) {
-      console.log(
-        `Comissão para o plano ${treatmentPlanId} já registrada ou paga.`
-      );
-      return null;
-    }
-
-    // 2. Busca dados
+    // 1. Busca dados essenciais (Plano, Vendedor, Plano de Comissão, Tiers)
     const plan = await tx.treatmentPlan.findUnique({
       where: { id: treatmentPlanId },
       include: {
         seller: {
           include: {
-            // Usar optional chaining aqui por segurança
             CommissionPlan: {
               include: { tiers: { orderBy: { minThreshold: "asc" } } },
             },
@@ -92,52 +81,101 @@ export class CommissionRecordService {
       },
     });
 
-    // Validação robusta dos dados necessários
+    // Validação robusta
     if (
       !plan?.seller?.CommissionPlan?.tiers ||
       plan.seller.CommissionPlan.tiers.length === 0
     ) {
       console.warn(
-        `Plano ${treatmentPlanId} ou vendedor/plano de comissão não encontrado/configurado.`
+        `Plano ${treatmentPlanId} ou vendedor/plano de comissão não encontrado/configurado para cálculo.`
       );
       return null;
     }
 
     const seller = plan.seller;
-    const commissionPlan = seller.CommissionPlan; // Agora sabemos que não é null
-    const planTotal = plan.total;
-    const tiers = commissionPlan!.tiers; // Sabemos que tiers existe e tem itens
+    const commissionPlan = seller.CommissionPlan; // Sabemos que existe
+    const tiers = commissionPlan!.tiers;
+    const triggerEvent = commissionPlan!.triggerEvent; // Pega o gatilho configurado
 
-    // 3. Encontra a faixa aplicável
-    let applicableTier = null;
-    // Itera pelas faixas ordenadas
-    for (const tier of tiers) {
-      const min = tier.minThreshold;
-      const max = tier.maxThreshold;
+    // 2. Verifica Idempotência (Não recalcular se já existe PENDING/PAID para o mesmo gatilho/item)
+    const existingCommissionWhere: Prisma.CommissionRecordWhereInput = {
+      treatmentPlanId: treatmentPlanId,
+      status: { in: [CommissionStatus.PENDING, CommissionStatus.PAID] },
+    };
+    // Se for por parcela, a chave de idempotência inclui a parcela
+    if (
+      triggerEvent === CommissionTriggerEvent.ON_EACH_INSTALLMENT_PAID &&
+      paymentInstallmentId
+    ) {
+      existingCommissionWhere.paymentInstallmentId = paymentInstallmentId;
+    }
+    const existingCommission = await tx.commissionRecord.findFirst({
+      where: existingCommissionWhere,
+    });
 
-      // Se o valor for menor que o mínimo da faixa atual, E não é a primeira faixa,
-      // então a faixa anterior (se existir) seria a correta, mas como estamos ordenados,
-      // significa que nenhuma faixa se aplica (ou a comissão seria 0).
-      // Simplificamos: se for menor que o mínimo da primeira faixa, não aplica.
-      if (planTotal < min && tiers.indexOf(tier) === 0) {
+    if (existingCommission) {
+      console.log(
+        `Comissão já registrada/paga para ${
+          paymentInstallmentId
+            ? `parcela ${paymentInstallmentId}`
+            : `plano ${treatmentPlanId}`
+        } conforme gatilho ${triggerEvent}.`
+      );
+      return null; // Evita duplicação
+    }
+
+    // 3. Define a Base de Cálculo da Comissão
+    let commissionBaseAmountDecimal = plan.total; // Padrão: Total do plano
+    if (
+      triggerEvent === CommissionTriggerEvent.ON_EACH_INSTALLMENT_PAID &&
+      paymentInstallmentId
+    ) {
+      const installment = await tx.paymentInstallment.findUnique({
+        where: { id: paymentInstallmentId },
+      });
+      if (installment) {
+        commissionBaseAmountDecimal = installment.amountDue; // Base é o valor da parcela
         console.log(
-          `Valor ${planTotal} abaixo da primeira faixa (${min}) para ${seller.fullName}.`
+          `Calculando comissão ON_EACH_INSTALLMENT_PAID sobre ${commissionBaseAmountDecimal} da parcela ${paymentInstallmentId}`
         );
-        applicableTier = null; // Garante que não aplicará nenhuma
+      } else {
+        console.warn(
+          `Parcela ${paymentInstallmentId} não encontrada para cálculo de comissão por parcela.`
+        );
+        return null;
+      }
+    }
+    const commissionBaseAmount = Number(commissionBaseAmountDecimal); // Converte para número para comparações
+
+    // 4. Encontra a Faixa de Comissão Aplicável
+    let applicableTier = null;
+    for (const tier of tiers) {
+      const min = Number(tier.minThreshold);
+      const max = tier.maxThreshold ? Number(tier.maxThreshold) : null; // Converte max para número ou null
+
+      // Se base for menor que o mínimo da primeira faixa, não aplica nenhuma
+      if (commissionBaseAmount < min && tiers.indexOf(tier) === 0) {
+        console.log(
+          `Valor base ${commissionBaseAmount} abaixo da primeira faixa (${min}) para ${seller.fullName}.`
+        );
+        applicableTier = null;
         break;
       }
 
-      // Verifica se está dentro da faixa (com ou sem limite máximo)
-      if (planTotal >= min && (max === null || planTotal <= max)) {
+      // Verifica se está dentro da faixa
+      if (
+        commissionBaseAmount >= min &&
+        (max === null || commissionBaseAmount <= max)
+      ) {
         applicableTier = tier;
-        break; // Encontrou a faixa correta
+        break; // Encontrou
       }
 
-      // Se chegou na última faixa e ainda não encontrou, mas a última não tem limite, aplica ela
+      // Se chegou na última faixa, ela não tem limite e a base é maior ou igual ao mínimo dela, aplica
       if (
         tiers.indexOf(tier) === tiers.length - 1 &&
         max === null &&
-        planTotal >= min
+        commissionBaseAmount >= min
       ) {
         applicableTier = tier;
         break;
@@ -146,21 +184,30 @@ export class CommissionRecordService {
 
     if (!applicableTier) {
       console.warn(
-        `Nenhuma faixa de comissão encontrada para ${seller.fullName} no valor ${planTotal} (${commissionPlan!.name}).`
+        `Nenhuma faixa de comissão encontrada para ${
+          seller.fullName
+        } no valor base ${commissionBaseAmount} (Plano: ${
+          commissionPlan!.name
+        }).`
       );
       return null;
     }
 
-    // 4. Calcula o valor
+    // 5. Calcula o Valor da Comissão
     const commissionAmount =
-      (Number(planTotal) * Number(applicableTier.percentage)) / 100;
+      (commissionBaseAmount * Number(applicableTier.percentage)) / 100;
 
-    // 5. Cria o registro
+    // 6. Cria o Registro de Comissão
+    console.log(
+      `Criando registro de comissão: ${commissionAmount} para ${
+        seller.fullName
+      } (Plano: ${treatmentPlanId}, Parcela: ${paymentInstallmentId || "N/A"})`
+    );
     return CommissionRecordService.create(tx, {
       clinicId: plan.clinicId,
       professionalId: seller.id,
       treatmentPlanId: plan.id,
-      paymentInstallmentId: paymentInstallmentId,
+      paymentInstallmentId: paymentInstallmentId, // Passa ID da parcela se aplicável
       calculatedAmount: commissionAmount,
     });
   }

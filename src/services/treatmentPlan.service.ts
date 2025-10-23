@@ -1,7 +1,8 @@
 // src/services/treatmentPlan.service.ts
-import { PaymentStatus } from "@prisma/client";
+import { CommissionTriggerEvent, PaymentStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { CreateTreatmentPlanInput } from "../schemas/treatmentPlan.schema";
+import { CommissionRecordService } from "./commissionRecord.service";
 
 export class TreatmentPlanService {
   /**
@@ -76,7 +77,31 @@ export class TreatmentPlanService {
       await tx.paymentInstallment.createMany({
         data: installmentsData,
       });
-      // --- FIM DA LÓGICA DE PARCELAS ---
+
+      const sellerWithPlan = await tx.user.findUnique({
+        where: { id: newPlan.sellerId },
+        include: { CommissionPlan: true },
+      });
+
+      if (
+        sellerWithPlan?.CommissionPlan?.triggerEvent ===
+        CommissionTriggerEvent.ON_SALE
+      ) {
+        console.log(`Disparando comissão ON_SALE para plano ${newPlan.id}`);
+        try {
+          await CommissionRecordService.calculateAndRecordCommissionForPlan(
+            tx,
+            newPlan.id
+          );
+        } catch (commissionError: any) {
+          console.error(
+            `Erro ao calcular/registrar comissão ON_SALE para plano ${newPlan.id}:`,
+            commissionError.message
+          );
+          // Decida se o erro na comissão deve falhar a criação do plano
+          // throw commissionError;
+        }
+      }
 
       // Retorna o plano completo com as parcelas
       return tx.treatmentPlan.findUnique({
