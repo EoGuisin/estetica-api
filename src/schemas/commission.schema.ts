@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+const CommissionTriggerEventEnum = z.enum([
+  "ON_SALE",
+  "ON_FIRST_INSTALLMENT_PAID",
+  "ON_FULL_PLAN_PAID",
+  "ON_EACH_INSTALLMENT_PAID",
+]);
+
 export const commissionTierSchema = z.object({
   minThreshold: z
     .number()
@@ -30,6 +37,7 @@ export const createCommissionPlanSchema = z.object({
     }),
   description: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
+  triggerEvent: CommissionTriggerEventEnum.default("ON_FULL_PLAN_PAID"),
   tiers: z
     .array(commissionTierSchema)
     .min(1, "O plano deve ter ao menos uma faixa de comissão."),

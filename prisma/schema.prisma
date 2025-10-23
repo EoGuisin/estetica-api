@@ -29,6 +29,13 @@ enum RoleType {
   FINANCIAL
 }
 
+enum CommissionTriggerEvent {
+  ON_SALE // Comissão gerada imediatamente na venda (TreatmentPlan criado)
+  ON_FIRST_INSTALLMENT_PAID // Comissão gerada quando a primeira parcela é paga (total ou parcialmente)
+  ON_FULL_PLAN_PAID // Comissão gerada apenas quando todas as parcelas do plano estão quitadas
+  ON_EACH_INSTALLMENT_PAID // Comissão gerada proporcionalmente a cada parcela quitada
+}
+
 model Clinic {
   id        String       @id @default(uuid())
   name      String
@@ -111,14 +118,17 @@ model User {
 
 model CommissionPlan {
   id          String  @id @default(uuid())
-  name        String // Ex: "Plano Profissional Sênior", "Comissão Padrão 2025"
+  name        String
   description String?
   clinicId    String
   isActive    Boolean @default(true)
 
+  // --- NOVO CAMPO ADICIONADO ---
+  triggerEvent CommissionTriggerEvent @default(ON_FULL_PLAN_PAID) // Define um padrão
+
   clinic Clinic           @relation(fields: [clinicId], references: [id])
-  tiers  CommissionTier[] // As faixas de comissão dentro deste plano
-  users  User[] // Profissionais associados a este plano
+  tiers  CommissionTier[]
+  users  User[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

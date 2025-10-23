@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma";
 import { Prisma, PaymentStatus } from "@prisma/client";
 import { RegisterPaymentInput } from "../schemas/paymentInstallment.schema";
+import { CommissionRecordService } from "./commissionRecord.service";
 // Placeholder: Importaremos o CommissionService quando ele existir
 // import { CommissionService } from "./commission.service";
 
@@ -14,43 +15,81 @@ export class PaymentInstallmentService {
     data: RegisterPaymentInput
   ) {
     return prisma.$transaction(async (tx) => {
-      // 1. Busca a parcela e garante que pertence à clínica e está pendente/vencida
       const installment = await tx.paymentInstallment.findFirstOrThrow({
         where: {
           id,
-          clinicId,
-          status: { in: [PaymentStatus.PENDING, PaymentStatus.OVERDUE] },
+          clinicId /* Removido filtro de status aqui para permitir múltiplos pagamentos parciais */,
         },
-        include: {
-          treatmentPlan: true, // Inclui para possível cálculo de comissão
-        },
+        include: { treatmentPlan: true },
       });
 
-      // 2. Define o status como PAGO
-      const newStatus = PaymentStatus.PAID;
+      // --- LÓGICA DE PAGAMENTO PARCIAL ---
+      // Calcula o total já pago anteriormente nesta parcela
+      const currentPaidAmount = Number(installment.paidAmount || 0);
+      const newlyPaidAmount = Number(data.paidAmount);
+      const totalPaid = currentPaidAmount + newlyPaidAmount;
+      const amountDue = Number(installment.amountDue);
+      const remainingDue = amountDue - totalPaid;
 
-      // 3. Atualiza a parcela com os dados do pagamento
+      // Define o novo status
+      let newStatus = installment.status;
+      if (totalPaid >= amountDue) {
+        newStatus = PaymentStatus.PAID; // Quitada!
+      } else if (totalPaid > 0 && totalPaid < amountDue) {
+        // Poderíamos introduzir um status PARTIALLY_PAID se necessário,
+        // mas por enquanto, mantemos PENDING/OVERDUE até quitar.
+        // Apenas atualizamos o valor pago. Se estava OVERDUE, continua OVERDUE.
+        newStatus =
+          installment.status === PaymentStatus.OVERDUE
+            ? PaymentStatus.OVERDUE
+            : PaymentStatus.PENDING;
+      } else if (
+        totalPaid <= 0 &&
+        installment.status !== PaymentStatus.CANCELED
+      ) {
+        // Se o pagamento for 0 ou negativo e não estiver cancelada, volta a PENDING/OVERDUE
+        newStatus =
+          installment.dueDate < new Date()
+            ? PaymentStatus.OVERDUE
+            : PaymentStatus.PENDING;
+      }
+      // ------------------------------------
+
       const updatedInstallment = await tx.paymentInstallment.update({
         where: { id },
         data: {
           status: newStatus,
-          paidAmount: data.paidAmount, // Idealmente, validar se paidAmount >= amountDue ou permitir pagamento parcial
+          // --- ATUALIZAÇÃO CUMULATIVA ---
+          paidAmount: new Prisma.Decimal(totalPaid.toFixed(2)), // Salva o total pago acumulado
+          // --------------------------
+          // Guarda o último detalhe de pagamento (data, método, notas do último pagamento)
           paymentDate: new Date(data.paymentDate),
           paymentMethod: data.paymentMethod,
-          notes: data.notes,
+          notes: data.notes, // Sobrescreve notas anteriores ou concatena? Decidimos sobrescrever por simplicidade.
         },
       });
 
-      // 4. TODO: Disparar o cálculo de comissão (quando o CommissionService existir)
-      // Esta lógica dependerá se a comissão é liberada por parcela ou pelo plano total.
-      // Exemplo: Se for liberada por parcela:
-      // await CommissionService.calculateAndRecordCommission(tx, installment.treatmentPlanId, updatedInstallment.id);
-      // Exemplo: Se for liberada ao quitar o plano (verificar se todas as parcelas estão pagas):
-      // const allInstallments = await tx.paymentInstallment.findMany({ where: { treatmentPlanId: installment.treatmentPlanId } });
-      // const allPaid = allInstallments.every(inst => inst.status === PaymentStatus.PAID);
-      // if (allPaid) {
-      //    await CommissionService.calculateAndRecordCommission(tx, installment.treatmentPlanId);
-      // }
+      // --- DISPARAR CÁLCULO DE COMISSÃO ---
+      // Verifica se a parcela foi TOTALMENTE paga AGORA para disparar a comissão
+      // (Ajuste esta condição se a regra for diferente, ex: liberar comissão no primeiro pagamento parcial)
+      if (
+        newStatus === PaymentStatus.PAID &&
+        installment.status !== PaymentStatus.PAID
+      ) {
+        console.log(
+          `Disparando cálculo de comissão para plano ${installment.treatmentPlanId} via parcela ${updatedInstallment.id}`
+        );
+        await CommissionRecordService.calculateAndRecordCommissionForPlan(
+          tx,
+          installment.treatmentPlanId,
+          updatedInstallment.id
+        );
+      } else {
+        console.log(
+          `Parcela ${updatedInstallment.id} não quitada (${newStatus}, ${totalPaid}/${amountDue}), comissão não disparada/recalculada.`
+        );
+      }
+      // --- FIM DO AJUSTE ---
 
       return updatedInstallment;
     });
@@ -114,7 +153,11 @@ export class PaymentInstallmentService {
         where,
         include: {
           treatmentPlan: {
-            select: { id: true, patient: { select: { id: true, name: true } } },
+            select: {
+              id: true,
+              patient: { select: { id: true, name: true } },
+              _count: { select: { paymentInstallments: true } },
+            },
           },
         },
         skip,
