@@ -24,6 +24,9 @@ export const registerPaymentSchema = z.object({
     message: "O método de pagamento é obrigatório.",
   }),
   notes: z.string().optional().nullable(),
+  bankAccountId: z
+    .string({ message: "A conta de destino é obrigatória." })
+    .uuid({ message: "Conta inválida." }),
 });
 
 export type RegisterPaymentInput = z.infer<typeof registerPaymentSchema>;

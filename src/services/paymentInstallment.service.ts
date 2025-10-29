@@ -1,5 +1,10 @@
 import { prisma } from "../lib/prisma";
-import { Prisma, PaymentStatus, CommissionTriggerEvent } from "@prisma/client";
+import {
+  Prisma,
+  PaymentStatus,
+  CommissionTriggerEvent,
+  TransactionType,
+} from "@prisma/client";
 import { RegisterPaymentInput } from "../schemas/paymentInstallment.schema";
 import { CommissionRecordService } from "./commissionRecord.service";
 
@@ -75,6 +80,35 @@ export class PaymentInstallmentService {
           notes: data.notes,
         },
       });
+
+      if (newlyPaidAmount > 0) {
+        await tx.financialTransaction.create({
+          data: {
+            clinicId: clinicId,
+            // Usar optional chaining para nome do paciente
+            description: `Recebimento Parcela ${
+              installment.installmentNumber
+            } - ${
+              installment.treatmentPlan?.patient?.name ??
+              "Paciente Desconhecido"
+            }`,
+            amount: new Prisma.Decimal(newlyPaidAmount.toFixed(2)), // Valor que acabou de ser pago
+            type: TransactionType.REVENUE, // Tipo correto importado
+            date: new Date(data.paymentDate),
+            bankAccountId: data.bankAccountId, // Recebido do frontend
+            paymentInstallmentId: updatedInstallment.id,
+          },
+        });
+
+        // Atualizar o saldo da BankAccount (INCREMENTAR)
+        await tx.bankAccount.update({
+          where: { id: data.bankAccountId },
+          data: { balance: { increment: newlyPaidAmount } },
+        });
+        console.log(
+          `Saldo da conta ${data.bankAccountId} incrementado em ${newlyPaidAmount}.`
+        );
+      }
 
       // --- LÓGICA REFINADA PARA DISPARAR COMISSÃO ---
       const commissionPlan = installment.treatmentPlan?.seller?.CommissionPlan;

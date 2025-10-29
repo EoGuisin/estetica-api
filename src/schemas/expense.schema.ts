@@ -37,6 +37,9 @@ export const markExpenseAsPaidSchema = z.object({
     .refine((d) => !Number.isNaN(Date.parse(d)), {
       message: "Formato de data inválido.",
     }),
+  bankAccountId: z
+    .string({ message: "A conta de destino é obrigatória." })
+    .uuid({ message: "Conta inválida." }),
 });
 
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;

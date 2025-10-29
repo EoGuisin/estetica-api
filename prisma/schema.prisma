@@ -50,17 +50,19 @@ model Clinic {
   anamnesisTemplates AnamnesisTemplate[]
   patientAssessments PatientAssessment[]
 
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  CommissionPlan      CommissionPlan[]
-  ProductCategory     ProductCategory[]
-  ProductBrand        ProductBrand[]
-  Supplier            Supplier[]
-  Product             Product[]
-  paymentInstallments PaymentInstallment[]
-  expenseCategories   ExpenseCategory[]
-  expenses            Expense[]
-  commissionRecords   CommissionRecord[]
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  CommissionPlan       CommissionPlan[]
+  ProductCategory      ProductCategory[]
+  ProductBrand         ProductBrand[]
+  Supplier             Supplier[]
+  Product              Product[]
+  paymentInstallments  PaymentInstallment[]
+  expenseCategories    ExpenseCategory[]
+  expenses             Expense[]
+  commissionRecords    CommissionRecord[]
+  BankAccount          BankAccount[]
+  FinancialTransaction FinancialTransaction[]
 
   @@map("clinics")
 }
@@ -715,9 +717,10 @@ model PaymentInstallment {
   treatmentPlan TreatmentPlan @relation(fields: [treatmentPlanId], references: [id], onDelete: Cascade)
   clinic        Clinic        @relation(fields: [clinicId], references: [id])
 
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  CommissionRecord CommissionRecord[]
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  CommissionRecord     CommissionRecord[]
+  FinancialTransaction FinancialTransaction[]
 
   @@index([treatmentPlanId])
   @@index([status])
@@ -755,8 +758,9 @@ model Expense {
   supplier Supplier?        @relation(fields: [supplierId], references: [id])
   category ExpenseCategory? @relation(fields: [categoryId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  FinancialTransaction FinancialTransaction[]
 
   @@index([clinicId])
   @@index([status])
@@ -795,3 +799,62 @@ model CommissionRecord {
   @@index([status])
   @@map("commission_records")
 }
+
+model BankAccount {
+  id      String  @id @default(uuid())
+  name    String // Ex: "Caixa Matriz", "Conta Itaú"
+  balance Decimal @default(0.0) @db.Decimal(10, 2) // Saldo atual
+
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
+  // Transações que saíram desta conta
+  transactionsFrom FinancialTransaction[] @relation("TransactionFrom")
+  // Transações que entraram nesta conta (para transferências)
+  transactionsTo   FinancialTransaction[] @relation("TransactionTo")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, clinicId])
+  @@map("bank_accounts")
+}
+
+enum TransactionType {
+  REVENUE // Entrada (Recebimento de Parcela)
+  EXPENSE // Saída (Pagamento de Despesa)
+  TRANSFER // Transferência entre contas
+}
+
+// O "Livro Caixa" / O verdadeiro "Fluxo de Caixa"
+model FinancialTransaction {
+  id          String          @id @default(uuid())
+  clinicId    String
+  description String
+  amount      Decimal         @db.Decimal(10, 2) // Valor da transação
+  type        TransactionType
+  date        DateTime // Data que a transação ocorreu (data do pagamento)
+
+  // Relacionamentos
+  bankAccountId String // De qual conta saiu (ou entrou, se REVENUE)
+  bankAccount   BankAccount @relation("TransactionFrom", fields: [bankAccountId], references: [id])
+
+  // Opcional: Para transferências
+  targetBankAccountId String?
+  targetBankAccount   BankAccount? @relation("TransactionTo", fields: [targetBankAccountId], references: [id])
+
+  // Opcional: Linkar com a origem
+  paymentInstallmentId String?
+  paymentInstallment   PaymentInstallment? @relation(fields: [paymentInstallmentId], references: [id], onDelete: SetNull)
+
+  expenseId String?
+  expense   Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([clinicId, date])
+  @@map("financial_transactions")
+}
+

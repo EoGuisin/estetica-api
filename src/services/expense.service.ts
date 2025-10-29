@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma";
-import { Prisma, PaymentStatus } from "@prisma/client";
+import { Prisma, PaymentStatus, TransactionType } from "@prisma/client";
 import {
   CreateExpenseInput,
   UpdateExpenseInput,
@@ -135,19 +135,55 @@ export class ExpenseService {
     clinicId: string,
     data: MarkExpenseAsPaidInput
   ) {
-    await prisma.expense.findFirstOrThrow({
-      where: {
-        id,
-        clinicId,
-        status: { in: [PaymentStatus.PENDING, PaymentStatus.OVERDUE] },
-      },
-    });
-    return prisma.expense.update({
-      where: { id },
-      data: {
-        status: PaymentStatus.PAID,
-        paymentDate: new Date(data.paymentDate),
-      },
+    return prisma.$transaction(async (tx) => {
+      // Envolve em transação
+      // 1. Valida e busca a despesa
+      const expense = await tx.expense.findFirstOrThrow({
+        where: {
+          id,
+          clinicId,
+          status: { in: [PaymentStatus.PENDING, PaymentStatus.OVERDUE] },
+        },
+      });
+
+      // --- Validação da Conta Bancária ---
+      await tx.bankAccount.findFirstOrThrow({
+        where: { id: data.bankAccountId, clinicId: clinicId },
+      });
+      // ---------------------------------
+
+      // 2. Atualiza o status da despesa
+      const updatedExpense = await tx.expense.update({
+        where: { id },
+        data: {
+          status: PaymentStatus.PAID,
+          paymentDate: new Date(data.paymentDate),
+        },
+      });
+
+      // 3. Cria a transação financeira de SAÍDA
+      await tx.financialTransaction.create({
+        data: {
+          clinicId: clinicId,
+          description: updatedExpense.description, // Descrição da despesa
+          amount: updatedExpense.amount, // Valor total da despesa
+          type: TransactionType.EXPENSE, // Tipo correto importado
+          date: new Date(data.paymentDate), // Data do pagamento
+          bankAccountId: data.bankAccountId, // Conta de onde saiu
+          expenseId: updatedExpense.id, // Linka com a despesa
+        },
+      });
+
+      // 4. Atualiza o saldo da BankAccount (DECREMENTAR)
+      await tx.bankAccount.update({
+        where: { id: data.bankAccountId },
+        data: { balance: { decrement: updatedExpense.amount } }, // Decrementa o saldo
+      });
+      console.log(
+        `Saldo da conta ${data.bankAccountId} decrementado em ${updatedExpense.amount}.`
+      );
+
+      return updatedExpense; // Retorna a despesa atualizada
     });
   }
 }
