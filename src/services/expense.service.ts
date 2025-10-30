@@ -161,23 +161,32 @@ export class ExpenseService {
         },
       });
 
-      // 3. Cria a transação financeira de SAÍDA
+      const activeSession = await tx.cashRegisterSession.findFirst({
+        where: {
+          bankAccountId: data.bankAccountId,
+          status: "OPEN",
+        },
+      });
+
+      // 2. Cria a transação financeira de SAÍDA
       await tx.financialTransaction.create({
         data: {
           clinicId: clinicId,
-          description: updatedExpense.description, // Descrição da despesa
-          amount: updatedExpense.amount, // Valor total da despesa
-          type: TransactionType.EXPENSE, // Tipo correto importado
-          date: new Date(data.paymentDate), // Data do pagamento
-          bankAccountId: data.bankAccountId, // Conta de onde saiu
-          expenseId: updatedExpense.id, // Linka com a despesa
+          description: updatedExpense.description,
+          amount: updatedExpense.amount,
+          type: TransactionType.EXPENSE,
+          date: new Date(data.paymentDate),
+          bankAccountId: data.bankAccountId,
+          expenseId: updatedExpense.id,
+          // 3. Vincula a transação à sessão de caixa
+          cashRegisterSessionId: activeSession ? activeSession.id : null,
         },
       });
 
       // 4. Atualiza o saldo da BankAccount (DECREMENTAR)
       await tx.bankAccount.update({
         where: { id: data.bankAccountId },
-        data: { balance: { decrement: updatedExpense.amount } }, // Decrementa o saldo
+        data: { balance: { decrement: updatedExpense.amount } },
       });
       console.log(
         `Saldo da conta ${data.bankAccountId} decrementado em ${updatedExpense.amount}.`

@@ -25,6 +25,9 @@ export class PaymentInstallmentService {
         include: {
           treatmentPlan: {
             include: {
+              patient: {
+                select: { id: true, name: true },
+              },
               seller: { include: { CommissionPlan: true } },
               _count: { select: { paymentInstallments: true } },
             },
@@ -82,23 +85,35 @@ export class PaymentInstallmentService {
       });
 
       if (newlyPaidAmount > 0) {
+        // --- INÍCIO DA MODIFICAÇÃO ---
+        // 1. Encontrar a sessão de caixa aberta para esta conta
+        const activeSession = await tx.cashRegisterSession.findFirst({
+          where: {
+            bankAccountId: data.bankAccountId,
+            status: "OPEN",
+          },
+        });
+
+        // 2. Criar a transação
         await tx.financialTransaction.create({
           data: {
             clinicId: clinicId,
-            // Usar optional chaining para nome do paciente
             description: `Recebimento Parcela ${
               installment.installmentNumber
             } - ${
               installment.treatmentPlan?.patient?.name ??
               "Paciente Desconhecido"
             }`,
-            amount: new Prisma.Decimal(newlyPaidAmount.toFixed(2)), // Valor que acabou de ser pago
-            type: TransactionType.REVENUE, // Tipo correto importado
+            amount: new Prisma.Decimal(newlyPaidAmount.toFixed(2)),
+            type: TransactionType.REVENUE,
             date: new Date(data.paymentDate),
-            bankAccountId: data.bankAccountId, // Recebido do frontend
+            bankAccountId: data.bankAccountId,
             paymentInstallmentId: updatedInstallment.id,
+            // 3. Vincular a transação à sessão de caixa, se houver uma aberta
+            cashRegisterSessionId: activeSession ? activeSession.id : null,
           },
         });
+        // --- FIM DA MODIFICAÇÃO ---
 
         // Atualizar o saldo da BankAccount (INCREMENTAR)
         await tx.bankAccount.update({

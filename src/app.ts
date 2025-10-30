@@ -25,6 +25,8 @@ import { paymentInstallmentRoutes } from "./routes/paymentInstallment.routes";
 import { expenseRoutes } from "./routes/expense.routes";
 import { expenseCategoryRoutes } from "./routes/expenseCategory.routes";
 import { commissionRecordRoutes } from "./routes/commissionRecord.routes";
+import { cashRegisterRoutes } from "./routes/cashRegister.routes";
+import { bankAccountRoutes } from "./routes/bankAccount.routes";
 
 export const app = fastify({
   bodyLimit: 5 * 1024 * 1024,
@@ -63,6 +65,8 @@ app.register(paymentInstallmentRoutes, { prefix: "/payment-installments" });
 app.register(expenseRoutes, { prefix: "/expenses" });
 app.register(expenseCategoryRoutes, { prefix: "/expense-categories" });
 app.register(commissionRecordRoutes, { prefix: "/commissions" });
+app.register(cashRegisterRoutes, { prefix: "/cash-register" });
+app.register(bankAccountRoutes, { prefix: "/bank-accounts" });
 
 app.setErrorHandler((error, request, reply) => {
   if (error.code === "FST_ERR_CTP_BODY_TOO_LARGE") {

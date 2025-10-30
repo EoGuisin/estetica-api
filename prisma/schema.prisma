@@ -63,6 +63,7 @@ model Clinic {
   commissionRecords    CommissionRecord[]
   BankAccount          BankAccount[]
   FinancialTransaction FinancialTransaction[]
+  CashRegisterSession  CashRegisterSession[]
 
   @@map("clinics")
 }
@@ -99,19 +100,20 @@ model User {
   professionalCouncilRegistry String?
   passwordResetTokens         PasswordResetToken[]
 
-  clinic         Clinic              @relation(fields: [clinicId], references: [id])
-  role           Role                @relation(fields: [roleId], references: [id])
-  specialties    Specialty[]         @relation("ProfessionalSpecialties")
-  appointments   Appointment[]
-  sales          TreatmentPlan[]
-  assessments    PatientAssessment[]
-  medicalReports MedicalReport[]
-  prescriptions  Prescription[]
-  CommissionPlan CommissionPlan?     @relation(fields: [commissionPlanId], references: [id])
-
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-  ProfessionalCouncil   ProfessionalCouncil? @relation(fields: [professionalCouncilId], references: [id])
+  clinic                Clinic                @relation(fields: [clinicId], references: [id])
+  role                  Role                  @relation(fields: [roleId], references: [id])
+  specialties           Specialty[]           @relation("ProfessionalSpecialties")
+  appointments          Appointment[]
+  sales                 TreatmentPlan[]
+  assessments           PatientAssessment[]
+  medicalReports        MedicalReport[]
+  prescriptions         Prescription[]
+  CommissionPlan        CommissionPlan?       @relation(fields: [commissionPlanId], references: [id])
+  openedCashSessions    CashRegisterSession[] @relation("OpenedByUser")
+  closedCashSessions    CashRegisterSession[] @relation("ClosedByUser")
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  ProfessionalCouncil   ProfessionalCouncil?  @relation(fields: [professionalCouncilId], references: [id])
   professionalCouncilId String?
   commissions           CommissionRecord[]
 
@@ -809,12 +811,12 @@ model BankAccount {
   clinic   Clinic @relation(fields: [clinicId], references: [id])
 
   // Transações que saíram desta conta
-  transactionsFrom FinancialTransaction[] @relation("TransactionFrom")
+  transactionsFrom     FinancialTransaction[] @relation("TransactionFrom")
   // Transações que entraram nesta conta (para transferências)
-  transactionsTo   FinancialTransaction[] @relation("TransactionTo")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  transactionsTo       FinancialTransaction[] @relation("TransactionTo")
+  cashRegisterSessions CashRegisterSession[]
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
 
   @@unique([name, clinicId])
   @@map("bank_accounts")
@@ -824,6 +826,45 @@ enum TransactionType {
   REVENUE // Entrada (Recebimento de Parcela)
   EXPENSE // Saída (Pagamento de Despesa)
   TRANSFER // Transferência entre contas
+}
+
+enum CashRegisterSessionStatus {
+  OPEN
+  CLOSED
+}
+
+// NOVO MODELO: Para gerenciar Abertura e Fechamento de Caixa
+model CashRegisterSession {
+  id              String   @id @default(uuid())
+  clinicId        String
+  bankAccountId   String // Qual conta/caixa está sendo aberta (Ex: "Caixa Matriz")
+  openedByUserId  String // Quem abriu
+  openedAt        DateTime @default(now())
+  openingBalance  Decimal  @db.Decimal(10, 2) // Saldo que o SISTEMA registrou na abertura
+  observedOpening Decimal  @db.Decimal(10, 2) // Saldo que o USUÁRIO contou na abertura
+
+  closedByUserId  String? // Quem fechou
+  closedAt        DateTime?
+  closingBalance  Decimal?  @db.Decimal(10, 2) // Saldo que o SISTEMA registrou no fechamento
+  observedClosing Decimal?  @db.Decimal(10, 2) // Saldo que o USUÁRIO contou no fechamento
+
+  // Diferença entre o saldo do sistema e o que o usuário contou
+  discrepancy Decimal? @db.Decimal(10, 2)
+
+  status CashRegisterSessionStatus @default(OPEN)
+  notes  String?
+
+  clinic       Clinic      @relation(fields: [clinicId], references: [id])
+  bankAccount  BankAccount @relation(fields: [bankAccountId], references: [id])
+  openedByUser User        @relation("OpenedByUser", fields: [openedByUserId], references: [id])
+  closedByUser User?       @relation("ClosedByUser", fields: [closedByUserId], references: [id])
+
+  // Todas as transações que ocorreram DENTRO desta sessão
+  transactions FinancialTransaction[]
+
+  @@index([clinicId, status])
+  @@index([bankAccountId, status])
+  @@map("cash_register_sessions")
 }
 
 // O "Livro Caixa" / O verdadeiro "Fluxo de Caixa"
@@ -850,11 +891,15 @@ model FinancialTransaction {
   expenseId String?
   expense   Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
 
-  clinic Clinic @relation(fields: [clinicId], references: [id])
-
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
   createdAt DateTime @default(now())
+
+  // --- LINHA ADICIONADA ---
+  // Vincula esta transação à sessão de caixa que estava aberta
+  cashRegisterSessionId String?
+  cashRegisterSession   CashRegisterSession? @relation(fields: [cashRegisterSessionId], references: [id], onDelete: SetNull)
+  // -------------------------
 
   @@index([clinicId, date])
   @@map("financial_transactions")
 }
-
