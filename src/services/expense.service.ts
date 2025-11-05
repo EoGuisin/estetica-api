@@ -168,7 +168,20 @@ export class ExpenseService {
         },
       });
 
-      // 2. Cria a transação financeira de SAÍDA
+      // 4. REGRA DE NEGÓCIO: Se o caixa estiver fechado, BLOQUEAR.
+      if (!activeSession) {
+        const bankAccount = await tx.bankAccount.findUnique({
+          where: { id: data.bankAccountId },
+          select: { name: true },
+        });
+        throw new Error(
+          `CAIXA FECHADO: Não é possível registrar esta despesa pois o caixa "${
+            bankAccount?.name || "desconhecido"
+          }" está fechado. Abra o caixa primeiro.`
+        );
+      }
+
+      // 5. Cria a transação financeira de SAÍDA VINCULADA
       await tx.financialTransaction.create({
         data: {
           clinicId: clinicId,
@@ -178,12 +191,12 @@ export class ExpenseService {
           date: new Date(data.paymentDate),
           bankAccountId: data.bankAccountId,
           expenseId: updatedExpense.id,
-          // 3. Vincula a transação à sessão de caixa
-          cashRegisterSessionId: activeSession ? activeSession.id : null,
+          // Vincula obrigatoriamente à sessão ativa
+          cashRegisterSessionId: activeSession.id,
         },
       });
 
-      // 4. Atualiza o saldo da BankAccount (DECREMENTAR)
+      // 6. Atualiza o saldo da BankAccount (DECREMENTAR)
       await tx.bankAccount.update({
         where: { id: data.bankAccountId },
         data: { balance: { decrement: updatedExpense.amount } },

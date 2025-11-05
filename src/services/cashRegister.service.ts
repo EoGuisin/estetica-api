@@ -37,7 +37,7 @@ export class CashRegisterService {
         status: CashRegisterSessionStatus.OPEN,
       },
       include: {
-        bankAccount: { select: { name: true } },
+        bankAccount: { select: { id: true, name: true } }, // Garantir ID aqui também
         openedByUser: { select: { fullName: true } },
       },
     });
@@ -93,7 +93,7 @@ export class CashRegisterService {
     const session = await prisma.cashRegisterSession.findFirst({
       where: { clinicId, bankAccountId, status: "OPEN" },
       include: {
-        bankAccount: { select: { name: true, balance: true } },
+        bankAccount: { select: { id: true, name: true, balance: true } }, // Garantir ID aqui
         openedByUser: { select: { fullName: true } },
       },
     });
@@ -102,7 +102,8 @@ export class CashRegisterService {
       // Se não houver sessão aberta, retorna o status da conta para o front-end
       const bankAccount = await prisma.bankAccount.findFirst({
         where: { id: bankAccountId, clinicId },
-        select: { name: true, balance: true },
+        // --- CORREÇÃO APLICADA AQUI ---
+        select: { id: true, name: true, balance: true },
       });
       return { session: null, bankAccount };
     }

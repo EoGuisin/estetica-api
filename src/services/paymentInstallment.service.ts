@@ -25,11 +25,9 @@ export class PaymentInstallmentService {
         include: {
           treatmentPlan: {
             include: {
-              patient: {
-                select: { id: true, name: true },
-              },
               seller: { include: { CommissionPlan: true } },
               _count: { select: { paymentInstallments: true } },
+              patient: { select: { name: true } }, // Adicionado para a msg de erro
             },
           },
         },
@@ -85,8 +83,7 @@ export class PaymentInstallmentService {
       });
 
       if (newlyPaidAmount > 0) {
-        // --- INÍCIO DA MODIFICAÇÃO ---
-        // 1. Encontrar a sessão de caixa aberta para esta conta
+        // 4. VERIFICAR SE O CAIXA DE DESTINO ESTÁ ABERTO
         const activeSession = await tx.cashRegisterSession.findFirst({
           where: {
             bankAccountId: data.bankAccountId,
@@ -94,7 +91,20 @@ export class PaymentInstallmentService {
           },
         });
 
-        // 2. Criar a transação
+        // 5. REGRA DE NEGÓCIO: Se o caixa estiver fechado, BLOQUEAR.
+        if (!activeSession) {
+          const bankAccount = await tx.bankAccount.findUnique({
+            where: { id: data.bankAccountId },
+            select: { name: true },
+          });
+          throw new Error(
+            `CAIXA FECHADO: Não é possível registrar este pagamento pois o caixa "${
+              bankAccount?.name || "desconhecido"
+            }" está fechado. Abra o caixa primeiro.`
+          );
+        }
+
+        // 6. Se estiver aberto, criar a transação VINCULADA à sessão
         await tx.financialTransaction.create({
           data: {
             clinicId: clinicId,
@@ -109,13 +119,12 @@ export class PaymentInstallmentService {
             date: new Date(data.paymentDate),
             bankAccountId: data.bankAccountId,
             paymentInstallmentId: updatedInstallment.id,
-            // 3. Vincular a transação à sessão de caixa, se houver uma aberta
-            cashRegisterSessionId: activeSession ? activeSession.id : null,
+            // Vincula obrigatoriamente à sessão ativa
+            cashRegisterSessionId: activeSession.id,
           },
         });
-        // --- FIM DA MODIFICAÇÃO ---
 
-        // Atualizar o saldo da BankAccount (INCREMENTAR)
+        // 7. Atualizar o saldo da BankAccount (INCREMENTAR)
         await tx.bankAccount.update({
           where: { id: data.bankAccountId },
           data: { balance: { increment: newlyPaidAmount } },
