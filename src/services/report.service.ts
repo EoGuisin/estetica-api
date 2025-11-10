@@ -1519,7 +1519,7 @@ export class ReportService {
           </td>
         </tr>
       `;
-    } else {
+    } else { 
       for (const item of data) {
         rowsHtml += `
           <tr>
