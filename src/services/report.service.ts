@@ -112,8 +112,8 @@ export class ReportService {
     }
 
     // 2. Definir datas
-    const startDateObj = new Date(startDate);
-    const endDateObj = new Date(endDate);
+    const startDateObj = new Date(startDate + "T00:00:00");
+    const endDateObj = new Date(endDate + "T23:59:59.999");
     endDateObj.setHours(23, 59, 59, 999);
 
     // 3. Buscar parcelas PAGAS no período, do profissional selecionado
@@ -381,8 +381,8 @@ export class ReportService {
     }
 
     // 2. Definir datas (garantir que endDate cubra o dia inteiro)
-    const startDateObj = new Date(startDate);
-    const endDateObj = new Date(endDate);
+    const startDateObj = new Date(startDate + "T00:00:00");
+    const endDateObj = new Date(endDate + "T23:59:59.999");
     endDateObj.setHours(23, 59, 59, 999); // Fim do dia
 
     // 3. Buscar os agendamentos
@@ -723,8 +723,8 @@ export class ReportService {
     }
 
     // 2. Definir datas (o filtro será na 'calculationDate')
-    const startDateObj = new Date(startDate);
-    const endDateObj = new Date(endDate);
+    const startDateObj = new Date(startDate + "T00:00:00");
+    const endDateObj = new Date(endDate + "T23:59:59.999");
     endDateObj.setHours(23, 59, 59, 999);
 
     // 3. Buscar os registros de comissão
@@ -992,8 +992,8 @@ export class ReportService {
     }
 
     // 2. Definir datas
-    const startDateObj = new Date(startDate);
-    const endDateObj = new Date(endDate);
+    const startDateObj = new Date(startDate + "T00:00:00");
+    const endDateObj = new Date(endDate + "T23:59:59.999");
     endDateObj.setHours(23, 59, 59, 999);
 
     // --- 3. ATUALIZAÇÃO DA QUERY DO PRISMA ---
@@ -1229,13 +1229,13 @@ export class ReportService {
     });
     if (!clinic) throw new Error("Clínica não encontrada.");
 
-    const startDateObj = new Date(startDate);
-    const endDateObj = new Date(endDate);
+    const startDateObj = new Date(startDate + "T00:00:00");
+    const endDateObj = new Date(endDate + "T23:59:59.999");
     endDateObj.setHours(23, 59, 59, 999);
 
     const where: Prisma.PaymentInstallmentWhereInput = {
       clinicId: clinicId,
-      status: status ? status : { in: ["PENDING", "OVERDUE"] },
+      status: status || { in: ["PENDING", "OVERDUE"] },
       dueDate: { gte: startDateObj, lte: endDateObj },
     };
 
@@ -1294,13 +1294,13 @@ export class ReportService {
     });
     if (!clinic) throw new Error("Clínica não encontrada.");
 
-    const startDateObj = new Date(startDate);
-    const endDateObj = new Date(endDate);
+    const startDateObj = new Date(startDate + "T00:00:00");
+    const endDateObj = new Date(endDate + "T23:59:59.999");
     endDateObj.setHours(23, 59, 59, 999);
 
     const where: Prisma.ExpenseWhereInput = {
       clinicId: clinicId,
-      status: status ? status : { in: ["PENDING", "OVERDUE"] },
+      status: status || { in: ["PENDING", "OVERDUE"] },
       dueDate: { gte: startDateObj, lte: endDateObj },
       categoryId: categoryId || undefined,
       supplierId: supplierId || undefined,
