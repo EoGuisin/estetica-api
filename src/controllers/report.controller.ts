@@ -5,8 +5,14 @@ import {
   accountsReceivableReportQuerySchema,
   appointmentsReportQuerySchema,
   attendedPatientsReportQuerySchema,
+  cashStatementReportQuerySchema,
   commissionReportQuerySchema,
+  inactivePatientsReportQuerySchema,
+  paymentMethodsReportQuerySchema,
   professionalValueReportQuerySchema,
+  salesReportQuerySchema,
+  stockAvailabilityReportQuerySchema,
+  stockMovementReportQuerySchema,
 } from "../schemas/report.schema";
 import { ReportService } from "../services/report.service";
 import { z } from "zod";
@@ -182,12 +188,10 @@ export class ReportController {
       return reply.send(pdfBuffer);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return reply
-          .status(400)
-          .send({
-            message: "Erro de validação nos filtros.",
-            issues: error.format(),
-          });
+        return reply.status(400).send({
+          message: "Erro de validação nos filtros.",
+          issues: error.format(),
+        });
       }
       console.error("Erro ao gerar relatório a receber:", error);
       return reply
@@ -215,14 +219,199 @@ export class ReportController {
       return reply.send(pdfBuffer);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return reply
-          .status(400)
-          .send({
-            message: "Erro de validação nos filtros.",
-            issues: error.format(),
-          });
+        return reply.status(400).send({
+          message: "Erro de validação nos filtros.",
+          issues: error.format(),
+        });
       }
       console.error("Erro ao gerar relatório a pagar:", error);
+      return reply
+        .status(500)
+        .send({ message: "Erro interno ao gerar relatório." });
+    }
+  }
+
+  static async generateStockAvailabilityReport(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    try {
+      const query = stockAvailabilityReportQuerySchema.parse(request.query);
+      const { clinicId } = request.user;
+      const pdfBuffer = await ReportService.generateStockAvailabilityReport(
+        clinicId,
+        query
+      );
+      reply.header("Content-Type", "application/pdf");
+      reply.header(
+        "Content-Disposition",
+        'inline; filename="relatorio_disponibilidade_estoque.pdf"'
+      );
+      return reply.send(pdfBuffer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          message: "Erro de validação nos filtros.",
+          issues: error.format(),
+        });
+      }
+      console.error("Erro ao gerar relatório de estoque:", error);
+      return reply
+        .status(500)
+        .send({ message: "Erro interno ao gerar relatório." });
+    }
+  }
+
+  static async generateStockMovementReport(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    try {
+      const query = stockMovementReportQuerySchema.parse(request.query);
+      const { clinicId } = request.user;
+      const pdfBuffer = await ReportService.generateStockMovementReport(
+        clinicId,
+        query
+      );
+      reply.header("Content-Type", "application/pdf");
+      reply.header(
+        "Content-Disposition",
+        'inline; filename="relatorio_movimentacao_estoque.pdf"'
+      );
+      return reply.send(pdfBuffer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          message: "Erro de validação nos filtros.",
+          issues: error.format(),
+        });
+      }
+      console.error("Erro ao gerar relatório de movimentação:", error);
+      return reply
+        .status(500)
+        .send({ message: "Erro interno ao gerar relatório." });
+    }
+  }
+
+  static async generateSalesReport(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    try {
+      const query = salesReportQuerySchema.parse(request.query);
+      const { clinicId } = request.user;
+      const pdfBuffer = await ReportService.generateSalesReport(
+        clinicId,
+        query
+      );
+      reply.header("Content-Type", "application/pdf");
+      reply.header(
+        "Content-Disposition",
+        'inline; filename="relatorio_vendas.pdf"'
+      );
+      return reply.send(pdfBuffer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          message: "Erro de validação nos filtros.",
+          issues: error.format(),
+        });
+      }
+      console.error("Erro ao gerar relatório de vendas:", error);
+      return reply
+        .status(500)
+        .send({ message: "Erro interno ao gerar relatório." });
+    }
+  }
+
+  static async generatePaymentMethodsReport(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    try {
+      const query = paymentMethodsReportQuerySchema.parse(request.query);
+      const { clinicId } = request.user;
+      const pdfBuffer = await ReportService.generatePaymentMethodsReport(
+        clinicId,
+        query
+      );
+      reply.header("Content-Type", "application/pdf");
+      reply.header(
+        "Content-Disposition",
+        'inline; filename="relatorio_formas_pagamento.pdf"'
+      );
+      return reply.send(pdfBuffer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          message: "Erro de validação nos filtros.",
+          issues: error.format(),
+        });
+      }
+      console.error("Erro ao gerar relatório de formas de pagamento:", error);
+      return reply
+        .status(500)
+        .send({ message: "Erro interno ao gerar relatório." });
+    }
+  }
+
+  static async generateInactivePatientsReport(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    try {
+      const query = inactivePatientsReportQuerySchema.parse(request.query);
+      const { clinicId } = request.user;
+      const pdfBuffer = await ReportService.generateInactivePatientsReport(
+        clinicId,
+        query
+      );
+      reply.header("Content-Type", "application/pdf");
+      reply.header(
+        "Content-Disposition",
+        'inline; filename="relatorio_pacientes_inativos.pdf"'
+      );
+      return reply.send(pdfBuffer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          message: "Erro de validação nos filtros.",
+          issues: error.format(),
+        });
+      }
+      console.error("Erro ao gerar relatório de inativos:", error);
+      return reply
+        .status(500)
+        .send({ message: "Erro interno ao gerar relatório." });
+    }
+  }
+
+  // --- NOVO MÉTODO: EXTRATO DE CAIXA ---
+  static async generateCashStatementReport(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    try {
+      const query = cashStatementReportQuerySchema.parse(request.query);
+      const { clinicId } = request.user;
+      const pdfBuffer = await ReportService.generateCashStatementReport(
+        clinicId,
+        query
+      );
+      reply.header("Content-Type", "application/pdf");
+      reply.header(
+        "Content-Disposition",
+        'inline; filename="relatorio_extrato_caixa.pdf"'
+      );
+      return reply.send(pdfBuffer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          message: "Erro de validação nos filtros.",
+          issues: error.format(),
+        });
+      }
+      console.error("Erro ao gerar extrato de caixa:", error);
       return reply
         .status(500)
         .send({ message: "Erro interno ao gerar relatório." });

@@ -23,4 +23,22 @@ export async function reportRoutes(app: FastifyInstance) {
 
   // GET /reports/accounts-payable
   app.get("/accounts-payable", ReportController.generateAccountsPayableReport);
+
+  // GET /reports/stock-availability
+  app.get("/stock-availability", ReportController.generateStockAvailabilityReport);
+
+  // GET /reports/stock-movement
+  app.get("/stock-movement", ReportController.generateStockMovementReport);
+  
+  // GET /reports/sales
+  app.get("/sales", ReportController.generateSalesReport);
+
+  // GET /reports/payment-methods
+  app.get("/payment-methods", ReportController.generatePaymentMethodsReport);
+
+  // GET /reports/inactive-patients
+  app.get("/inactive-patients", ReportController.generateInactivePatientsReport);
+
+  // GET /reports/cash-statement
+  app.get("/cash-statement", ReportController.generateCashStatementReport);
 }
