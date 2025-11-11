@@ -691,7 +691,7 @@ export class ReportService {
 
     const where: Prisma.PaymentInstallmentWhereInput = {
       clinicId: clinicId,
-      status: status ? status : { in: ["PENDING", "OVERDUE"] },
+      status: status || { in: ["PENDING", "OVERDUE"] },
       dueDate: { gte: startDateObj, lte: endDateObj },
     };
 
@@ -757,7 +757,7 @@ export class ReportService {
 
     const where: Prisma.ExpenseWhereInput = {
       clinicId: clinicId,
-      status: status ? status : { in: ["PENDING", "OVERDUE"] },
+      status: status || { in: ["PENDING", "OVERDUE"] },
       dueDate: { gte: startDateObj, lte: endDateObj },
       categoryId: categoryId || undefined,
       supplierId: supplierId || undefined,
@@ -2101,12 +2101,12 @@ export class ReportService {
       }
     }
 
-    const topSellerHtml = !isFilteredBySeller
-      ? `<div class="summary-item">
+    const topSellerHtml = isFilteredBySeller
+      ? ""
+      : `<div class="summary-item">
           <h4>Vendedor Destaque</h4>
           <p>${summary.topSeller}</p>
-        </div>`
-      : "";
+        </div>`;
 
     return `
     <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório de Vendas</title>
