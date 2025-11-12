@@ -1,10 +1,11 @@
+// src/controllers/paymentInstallment.controller.ts
+
 import { FastifyRequest, FastifyReply } from "fastify";
 import { PaymentInstallmentService } from "../services/paymentInstallment.service";
 import { registerPaymentSchema } from "../schemas/paymentInstallment.schema";
 import { PaymentStatus } from "@prisma/client";
 
 export class PaymentInstallmentController {
-
   static async registerPayment(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { clinicId } = request.user;
@@ -18,11 +19,11 @@ export class PaymentInstallmentController {
       );
       return reply.send(installment);
     } catch (error: any) {
-      // Tratar erros como 'Parcela não encontrada ou já paga'
-      if (error.code === 'P2025') { // Prisma's RecordNotFound error
-         return reply.status(404).send({ message: "Parcela não encontrada ou inválida para pagamento." });
+      if (error.code === "P2025") {
+        return reply.status(404).send({
+          message: "Parcela não encontrada ou inválida para pagamento.",
+        });
       }
-      // Outros erros específicos do serviço poderiam ser tratados aqui
       throw error;
     }
   }
@@ -32,39 +33,40 @@ export class PaymentInstallmentController {
     const {
       page = "1",
       pageSize = "10",
-      status, // Recebe como string ou array de strings
+      status,
       dueDateStart,
       dueDateEnd,
-      patientId,
-      treatmentPlanId
+      patientName,
+      treatmentPlanId,
     } = request.query as {
       page?: string;
       pageSize?: string;
       status?: string | string[];
       dueDateStart?: string;
       dueDateEnd?: string;
-      patientId?: string;
+      patientName?: string;
       treatmentPlanId?: string;
     };
 
     // Converte 'status' para array se vier como string
     let statusArray: PaymentStatus[] | undefined = undefined;
     if (status) {
-       const rawStatuses = Array.isArray(status) ? status : [status];
-       statusArray = rawStatuses.filter(s => Object.values(PaymentStatus).includes(s as PaymentStatus)) as PaymentStatus[];
+      const rawStatuses = Array.isArray(status) ? status : [status];
+      statusArray = rawStatuses.filter((s) =>
+        Object.values(PaymentStatus).includes(s as PaymentStatus)
+      ) as PaymentStatus[];
     }
-
 
     const result = await PaymentInstallmentService.list(
       clinicId,
       Number(page),
       Number(pageSize),
-      { 
-        status: statusArray, 
-        dueDateStart, 
-        dueDateEnd, 
-        patientId,
-        treatmentPlanId
+      {
+        status: statusArray,
+        dueDateStart,
+        dueDateEnd,
+        patientName,
+        treatmentPlanId,
       }
     );
     return reply.send(result);
