@@ -329,27 +329,32 @@ export class AnamnesisService {
     let template = appointment.assessment?.template;
     if (!template) {
       const clinicId = appointment.professional.clinicId;
-      const foundTemplate = await prisma.anamnesisTemplate.findFirst({
-        where: {
-          clinicId,
-          isActive: true,
-        },
-        include: {
-          sections: {
-            orderBy: { order: "asc" },
-            include: {
-              questions: {
-                where: { parentQuestionId: null },
-                orderBy: { order: "asc" },
-                include: {
-                  subQuestions: true,
+
+      // Verificamos se existe um clinicId válido antes de buscar
+      if (clinicId) {
+        const foundTemplate = await prisma.anamnesisTemplate.findFirst({
+          where: {
+            clinicId: clinicId,
+            isActive: true,
+          },
+          include: {
+            sections: {
+              orderBy: { order: "asc" },
+              include: {
+                questions: {
+                  where: { parentQuestionId: null },
+                  orderBy: { order: "asc" },
+                  include: {
+                    subQuestions: true,
+                  },
                 },
               },
             },
           },
-        },
-      });
-      template = foundTemplate ?? undefined;
+        });
+        // Se encontrou, atribui. Se não, continua undefined.
+        template = foundTemplate ?? undefined;
+      }
     }
 
     return {

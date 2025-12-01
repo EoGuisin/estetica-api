@@ -36,12 +36,60 @@ enum CommissionTriggerEvent {
   ON_EACH_INSTALLMENT_PAID // Comissão gerada proporcionalmente a cada parcela quitada
 }
 
+model Account {
+  id      String   @id @default(uuid())
+  ownerId String   @unique
+  owner   User     @relation("AccountOwner", fields: [ownerId], references: [id])
+  clinics Clinic[]
+
+  subscription Subscription?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("accounts")
+}
+
+model SubscriptionPlan {
+  id          String  @id @default(uuid())
+  name        String  @unique // Ex: "Plano Básico", "Plano Pro"
+  clinicLimit Int
+  price       Decimal @db.Decimal(10, 2)
+  isActive    Boolean @default(true)
+
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+// A assinatura ATIVA de uma conta
+model Subscription {
+  id        String    @id @default(uuid())
+  status    String // Ex: "ACTIVE", "CANCELED", "PAST_DUE"
+  startDate DateTime
+  endDate   DateTime? // Nulo para planos de renovação automática
+
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  planId String
+  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("subscriptions")
+}
+
 model Clinic {
   id        String       @id @default(uuid())
   name      String
-  taxId     String       @unique // Formerly CNPJ
+  taxId     String       @unique
   status    ClinicStatus @default(PENDING_PAYMENT)
   addressId String?
+  accountId String
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   address            Address?            @relation(fields: [addressId], references: [id])
   patients           Patient[]
@@ -94,14 +142,15 @@ model User {
   appointmentDuration         Int? // In minutes
   notes                       String?
   color                       String?              @default("#ffffff")
-  clinicId                    String
-  roleId                      String
+  clinicId                    String?
+  roleId                      String?
   commissionPlanId            String?
   professionalCouncilRegistry String?
   passwordResetTokens         PasswordResetToken[]
 
-  clinic                Clinic                @relation(fields: [clinicId], references: [id])
-  role                  Role                  @relation(fields: [roleId], references: [id])
+  clinic                Clinic?               @relation(fields: [clinicId], references: [id])
+  role                  Role?                 @relation(fields: [roleId], references: [id])
+  ownedAccount          Account?              @relation("AccountOwner")
   specialties           Specialty[]           @relation("ProfessionalSpecialties")
   appointments          Appointment[]
   sales                 TreatmentPlan[]

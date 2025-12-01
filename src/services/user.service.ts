@@ -59,12 +59,11 @@ export class UserService {
     return { users: formattedUsers, totalCount };
   }
 
-  static async getById(id: string, clinicId: string) {
-    const user = await prisma.user.findFirst({
-      where: { id, clinicId },
+  static async getById(id: string) {
+    const user = await prisma.user.findUnique({
+      where: { id },
       include: {
         specialties: true,
-        // --- INCLUSÃO ADICIONADA ---
         CommissionPlan: true,
         ProfessionalCouncil: true,
       },
@@ -81,9 +80,9 @@ export class UserService {
     return null;
   }
 
-  static async update(id: string, clinicId: string, data: any) {
+  static async update(id: string, data: any) {
     const { specialtyIds, ...userData } = data;
-    await prisma.user.findFirstOrThrow({ where: { id, clinicId } });
+    await prisma.user.findFirstOrThrow({ where: { id } });
 
     // Garante que o campo nulo não seja enviado como 'undefined' para o Prisma
     if (userData.commissionPlanId === "") userData.commissionPlanId = null;

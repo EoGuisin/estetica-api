@@ -8,7 +8,7 @@ import { ProductBrandService } from "../services/productBrand.service";
 export class ProductBrandController {
   static async create(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const data = createProductBrandSchema.parse(request.body);
 
       const brand = await ProductBrandService.create(data, clinicId);
@@ -24,7 +24,7 @@ export class ProductBrandController {
   }
 
   static async list(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const {
       page = "1",
       pageSize = "10",
@@ -45,7 +45,7 @@ export class ProductBrandController {
   }
 
   static async getById(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
 
     const brand = await ProductBrandService.getById(id, clinicId);
@@ -57,7 +57,7 @@ export class ProductBrandController {
   }
 
   static async update(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const data = updateProductBrandSchema.parse(request.body);
 
@@ -66,7 +66,7 @@ export class ProductBrandController {
   }
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
 
     try {

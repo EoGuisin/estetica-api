@@ -5,14 +5,14 @@ import { DashboardService } from "../services/dashboard.service";
 export class DashboardController {
   static async getProfessionals(request: FastifyRequest, reply: FastifyReply) {
     // Agora 'request.user' existe e está tipado graças ao middleware
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const professionals = await DashboardService.getProfessionals(clinicId);
     return reply.send(professionals);
   }
 
   static async getAppointments(request: FastifyRequest, reply: FastifyReply) {
     // O mesmo aqui, 'clinicId' é obtido de forma segura
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { start, end, professionals } = request.query as {
       start: string;
       end: string;

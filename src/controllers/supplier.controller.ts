@@ -8,7 +8,7 @@ import { SupplierService } from "../services/supplier.service";
 export class SupplierController {
   static async create(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const data = createSupplierSchema.parse(request.body);
 
       const supplier = await SupplierService.create(data, clinicId);
@@ -24,7 +24,7 @@ export class SupplierController {
   }
 
   static async list(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const {
       page = "1",
       pageSize = "10",
@@ -45,7 +45,7 @@ export class SupplierController {
   }
 
   static async getById(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
 
     const supplier = await SupplierService.getById(id, clinicId);
@@ -57,7 +57,7 @@ export class SupplierController {
   }
 
   static async update(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const data = updateSupplierSchema.parse(request.body);
 
@@ -66,7 +66,7 @@ export class SupplierController {
   }
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
 
     try {

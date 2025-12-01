@@ -8,7 +8,7 @@ import { AppointmentService } from "../services/appointment.service";
 
 export class AppointmentController {
   static async create(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const data = createAppointmentSchema.parse(request.body);
 
     try {
@@ -28,7 +28,7 @@ export class AppointmentController {
   }
 
   static async listPatients(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const patients = await AppointmentService.listPatients(clinicId);
     return reply.send(patients);
   }
@@ -45,7 +45,7 @@ export class AppointmentController {
     request: FastifyRequest,
     reply: FastifyReply
   ) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { patientId } = request.params as { patientId: string };
     const plans = await AppointmentService.listTreatmentPlansByPatient(
       clinicId,

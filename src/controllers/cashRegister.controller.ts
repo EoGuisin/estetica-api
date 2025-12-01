@@ -13,7 +13,8 @@ import { CashRegisterSessionStatus } from "@prisma/client";
 export class CashRegisterController {
   static async openSession(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId, userId } = request.user;
+      const { userId } = request.user;
+      const { clinicId } = request;
       const { bankAccountId, observedOpening } = openSessionSchema.parse(
         request.body
       );
@@ -34,7 +35,8 @@ export class CashRegisterController {
   }
 
   static async closeSession(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId, userId } = request.user;
+    const { userId } = request.user;
+    const { clinicId } = request;
     const { sessionId } = sessionParamsSchema.parse(request.params);
     const { observedClosing, notes } = closeSessionSchema.parse(request.body);
 
@@ -49,7 +51,7 @@ export class CashRegisterController {
   }
 
   static async getActiveSession(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { bankAccountId } = bankAccountParamsSchema.parse(request.params);
     const data = await CashRegisterService.getActiveSession(
       clinicId,
@@ -59,7 +61,7 @@ export class CashRegisterController {
   }
 
   static async getSessionDetails(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { sessionId } = sessionParamsSchema.parse(request.params);
     const details = await CashRegisterService.getSessionDetails(
       clinicId,
@@ -69,7 +71,7 @@ export class CashRegisterController {
   }
 
   static async listSessions(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { page, pageSize, status, dateStart, dateEnd, bankAccountId } =
       listSessionsQuerySchema.parse(request.query);
 

@@ -9,14 +9,14 @@ import { BankAccountService } from "../services/bankAccount.service";
 
 export class BankAccountController {
   static async create(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const data = createBankAccountSchema.parse(request.body);
     const bankAccount = await BankAccountService.create(clinicId, data);
     return reply.status(201).send(bankAccount);
   }
 
   static async list(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { page, pageSize, name } = listBankAccountQuerySchema.parse(
       request.query
     );
@@ -31,14 +31,14 @@ export class BankAccountController {
   }
 
   static async getById(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = bankAccountParamsSchema.parse(request.params);
     const bankAccount = await BankAccountService.getById(id, clinicId);
     return reply.send(bankAccount);
   }
 
   static async update(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = bankAccountParamsSchema.parse(request.params);
     const data = updateBankAccountSchema.parse(request.body);
 
@@ -47,7 +47,7 @@ export class BankAccountController {
   }
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = bankAccountParamsSchema.parse(request.params);
 
     try {

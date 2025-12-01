@@ -42,7 +42,7 @@ export class PrescriptionController {
   }
 
   static async downloadPdf(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { prescriptionId } = prescriptionParamsSchema.parse(request.params);
     const pdfBuffer = await PrescriptionService.generatePdf(
       prescriptionId,

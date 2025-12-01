@@ -5,7 +5,7 @@ import { CommissionStatus } from "@prisma/client";
 
 export class CommissionRecordController {
   static async list(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const {
       page = "1",
       pageSize = "10",
@@ -39,7 +39,7 @@ export class CommissionRecordController {
 
   static async markAsPaid(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const { id } = request.params as { id: string };
       const data = markCommissionAsPaidSchema.parse(request.body);
 

@@ -9,7 +9,7 @@ import { PatientService } from "../services/patient.service";
 export class PatientController {
   static async create(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const data = createPatientSchema.parse(request.body);
 
       const patient = await PatientService.create(clinicId, data);
@@ -24,7 +24,7 @@ export class PatientController {
     }
   }
   static async list(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const {
       page = "1",
       pageSize = "10",
@@ -51,7 +51,7 @@ export class PatientController {
   }
 
   static async getById(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const patient = await PatientService.getById(id, clinicId);
     if (!patient) {
@@ -61,7 +61,7 @@ export class PatientController {
   }
 
   static async update(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const data = updatePatientSchema.parse(request.body);
     const patient = await PatientService.update(id, clinicId, data);
@@ -69,7 +69,7 @@ export class PatientController {
   }
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     await PatientService.delete(id, clinicId);
     return reply.status(204).send();

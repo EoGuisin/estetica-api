@@ -2,16 +2,20 @@
 import { FastifyRequest, FastifyReply, HookHandlerDoneFunction } from "fastify";
 import jwt from "jsonwebtoken";
 
+// --- MUDANÇA AQUI ---
+// O payload agora reflete o novo schema.
+// roleId e clinicId podem ser nulos (para Donos)
 interface UserPayload {
   userId: string;
-  roleId: string;
-  clinicId: string;
+  roleId: string | null;
+  clinicId: string | null;
+  accountId: string;
 }
 
-// Estende a interface do FastifyRequest para incluir nosso payload 'user'
+// Estende a interface do FastifyRequest
 declare module "fastify" {
   interface FastifyRequest {
-    user: UserPayload;
+    user: UserPayload; // Payload bruto do token
   }
 }
 
@@ -42,7 +46,6 @@ export function authMiddleware(
 
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    // Este erro é para o desenvolvedor, não para o usuário final
     throw new Error("Chave secreta JWT não configurada no .env");
   }
 
@@ -51,7 +54,9 @@ export function authMiddleware(
       return reply.status(401).send({ message: "Token inválido ou expirado." });
     }
 
-    // Anexa o payload decodificado ao objeto de requisição
+    // --- MUDANÇA AQUI ---
+    // Apenas anexa o payload decodificado.
+    // NÃO tentamos adivinhar a clínica aqui.
     request.user = decoded as UserPayload;
     done();
   });

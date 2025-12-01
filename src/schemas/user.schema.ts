@@ -27,22 +27,16 @@ export const createUserSchema = z.object({
   notes: z.string().optional().nullable(),
   specialtyIds: z.array(z.string().uuid()).optional(),
 
-  // --- CAMPOS ADICIONADOS ---
-  commissionPlanId: z
-    .string()
-    .uuid("Plano de comissão inválido.")
-    .optional()
-    .nullable(),
+  commissionPlanId: z.string().uuid().optional().nullable().or(z.literal("")), // Aceita string vazia vinda do select
+
   professionalCouncilId: z
     .string()
-    .uuid("Conselho profissional inválido.")
+    .uuid()
     .optional()
-    .nullable(),
-  professionalCouncilRegistry: z
-    .string()
-    .min(1, "O número de registro é obrigatório se o conselho for selecionado.")
-    .optional()
-    .nullable(),
+    .nullable()
+    .or(z.literal("")), // Agora não é mais obrigatório e aceita ""
+
+  professionalCouncilRegistry: z.string().optional().nullable(), // Removi o .min(1) para não travar se o usuário limpar o campo
 });
 
 export const updateUserSchema = createUserSchema

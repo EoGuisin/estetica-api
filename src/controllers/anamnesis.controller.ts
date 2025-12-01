@@ -8,20 +8,20 @@ import {
 
 export class AnamnesisController {
   static async createTemplate(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const data = createTemplateSchema.parse(request.body);
     const template = await AnamnesisService.createTemplate(clinicId, data);
     return reply.status(201).send(template);
   }
 
   static async listTemplates(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const templates = await AnamnesisService.listTemplates(clinicId);
     return reply.send(templates);
   }
 
   static async getTemplateById(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const template = await AnamnesisService.getTemplateById(id, clinicId);
     if (!template) {
@@ -31,7 +31,7 @@ export class AnamnesisController {
   }
 
   static async updateTemplate(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const data = updateTemplateSchema.parse(request.body);
     const template = await AnamnesisService.updateTemplate(id, clinicId, data);
@@ -39,14 +39,14 @@ export class AnamnesisController {
   }
 
   static async deleteTemplate(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     await AnamnesisService.deleteTemplate(id, clinicId);
     return reply.status(204).send();
   }
 
   static async duplicateTemplate(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const newTemplate = await AnamnesisService.duplicateTemplate(id, clinicId);
     return reply.status(201).send(newTemplate);
@@ -56,7 +56,8 @@ export class AnamnesisController {
     request: FastifyRequest,
     reply: FastifyReply
   ) {
-    const { clinicId, userId } = request.user;
+    const { userId } = request.user;
+    const { clinicId } = request;
     const { appointmentId } = request.params as { appointmentId: string };
     const data = createAssessmentSchema.parse(request.body);
     const assessment = await AnamnesisService.createOrUpdateAssessment(

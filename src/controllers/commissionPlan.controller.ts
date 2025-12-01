@@ -8,7 +8,7 @@ import { CommissionPlanService } from "../services/commissionPlan.service";
 export class CommissionPlanController {
   static async create(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const data = createCommissionPlanSchema.parse(request.body);
 
       const plan = await CommissionPlanService.create(data, clinicId);
@@ -24,7 +24,7 @@ export class CommissionPlanController {
   }
 
   static async list(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const {
       page = "1",
       pageSize = "10",
@@ -45,7 +45,7 @@ export class CommissionPlanController {
   }
 
   static async getById(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
 
     const plan = await CommissionPlanService.getById(id, clinicId);
@@ -59,7 +59,7 @@ export class CommissionPlanController {
   }
 
   static async update(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const data = updateCommissionPlanSchema.parse(request.body);
 
@@ -68,7 +68,7 @@ export class CommissionPlanController {
   }
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
 
     try {

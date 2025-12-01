@@ -25,7 +25,7 @@ export class ReportController {
     try {
       // Validar os query params
       const query = appointmentsReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
 
       // Chamar o service para gerar o PDF
       const pdfBuffer = await ReportService.generateAppointmentsReport(
@@ -65,7 +65,7 @@ export class ReportController {
     try {
       // 1. Validar os query params
       const query = professionalValueReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
 
       // 2. Chamar o service para gerar o PDF
       const pdfBuffer = await ReportService.generateProfessionalValueReport(
@@ -102,7 +102,7 @@ export class ReportController {
     try {
       // 1. Validar os query params
       const query = commissionReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
 
       // 2. Chamar o service para gerar o PDF
       const pdfBuffer = await ReportService.generateCommissionReport(
@@ -139,7 +139,7 @@ export class ReportController {
     try {
       // 1. Validar os query params
       const query = attendedPatientsReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
 
       // 2. Chamar o service para gerar o PDF
       const pdfBuffer = await ReportService.generateAttendedPatientsReport(
@@ -175,7 +175,7 @@ export class ReportController {
   ) {
     try {
       const query = accountsReceivableReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const pdfBuffer = await ReportService.generateAccountsReceivableReport(
         clinicId,
         query
@@ -206,7 +206,7 @@ export class ReportController {
   ) {
     try {
       const query = accountsPayableReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const pdfBuffer = await ReportService.generateAccountsPayableReport(
         clinicId,
         query
@@ -237,7 +237,7 @@ export class ReportController {
   ) {
     try {
       const query = stockAvailabilityReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const pdfBuffer = await ReportService.generateStockAvailabilityReport(
         clinicId,
         query
@@ -268,7 +268,7 @@ export class ReportController {
   ) {
     try {
       const query = stockMovementReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const pdfBuffer = await ReportService.generateStockMovementReport(
         clinicId,
         query
@@ -299,7 +299,7 @@ export class ReportController {
   ) {
     try {
       const query = salesReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const pdfBuffer = await ReportService.generateSalesReport(
         clinicId,
         query
@@ -330,7 +330,7 @@ export class ReportController {
   ) {
     try {
       const query = paymentMethodsReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const pdfBuffer = await ReportService.generatePaymentMethodsReport(
         clinicId,
         query
@@ -361,7 +361,7 @@ export class ReportController {
   ) {
     try {
       const query = inactivePatientsReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const pdfBuffer = await ReportService.generateInactivePatientsReport(
         clinicId,
         query
@@ -393,7 +393,7 @@ export class ReportController {
   ) {
     try {
       const query = cashStatementReportQuerySchema.parse(request.query);
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const pdfBuffer = await ReportService.generateCashStatementReport(
         clinicId,
         query

@@ -42,7 +42,7 @@ export class MedicalReportController {
   }
 
   static async downloadPdf(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { reportId } = reportParamsSchema.parse(request.params);
     const pdfBuffer = await MedicalReportService.generatePdf(
       reportId,

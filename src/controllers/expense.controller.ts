@@ -9,14 +9,14 @@ import { PaymentStatus } from "@prisma/client";
 
 export class ExpenseController {
   static async create(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const data = createExpenseSchema.parse(request.body);
     const expense = await ExpenseService.create(data, clinicId);
     return reply.status(201).send(expense);
   }
 
   static async list(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const {
       page = "1",
       pageSize = "10",
@@ -53,7 +53,7 @@ export class ExpenseController {
   }
 
   static async getById(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const expense = await ExpenseService.getById(id, clinicId);
     if (!expense) {
@@ -63,7 +63,7 @@ export class ExpenseController {
   }
 
   static async update(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const data = updateExpenseSchema.parse(request.body);
     const expense = await ExpenseService.update(id, clinicId, data);
@@ -71,7 +71,7 @@ export class ExpenseController {
   }
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     await ExpenseService.delete(id, clinicId);
     return reply.status(204).send();
@@ -79,7 +79,7 @@ export class ExpenseController {
 
   static async markAsPaid(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const { id } = request.params as { id: string };
       const data = markExpenseAsPaidSchema.parse(request.body);
       const expense = await ExpenseService.markAsPaid(id, clinicId, data);

@@ -1,4 +1,3 @@
-// src/services/auth.service.ts
 import { prisma } from "../lib/prisma";
 import {
   ForgotPasswordInput,
@@ -13,14 +12,26 @@ import crypto from "crypto";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// --- NOVA INTERFACE (para o payload do JWT) ---
+// Note que roleId e clinicId podem ser nulos
+interface UserPayload {
+  userId: string;
+  roleId: string | null;
+  clinicId: string | null;
+  accountId: string; // Todos agora pertencem a uma conta
+}
+
 export class AuthService {
   static async login(data: LoginInput) {
     const { email, password } = data;
 
+    // --- MUDANÇA AQUI ---
+    // Buscamos o usuário e suas *potenciais* relações (de Dono ou de Funcionário)
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
-        clinic: true,
+        clinic: { select: { accountId: true } }, // Se for funcionário, pegamos o accountId da clínica
+        ownedAccount: { select: { id: true } }, // Se for dono, pegamos o ID da conta dele
       },
     });
 
@@ -39,17 +50,41 @@ export class AuthService {
       throw new Error("Chave secreta JWT não configurada.");
     }
 
-    const token = jwt.sign(
-      {
+    // --- MUDANÇA AQUI ---
+    // Monta o payload do JWT dinamicamente
+    let payload: UserPayload;
+
+    if (user.clinicId && user.clinic) {
+      // É um FUNCIONÁRIO
+      payload = {
         userId: user.id,
         roleId: user.roleId,
         clinicId: user.clinicId,
-      },
-      secret,
-      { expiresIn: "7d" }
-    );
+        accountId: user.clinic.accountId, // O ID da conta "mãe"
+      };
+    } else if (user.ownedAccount) {
+      // É um DONO
+      payload = {
+        userId: user.id,
+        roleId: null, // Dono não tem "Role" de clínica
+        clinicId: null, // Dono não tem *uma* clínica, tem várias
+        accountId: user.ownedAccount.id, // O ID da conta dele
+      };
+    } else {
+      // Caso de erro: usuário órfão (sempre bom ter um fallback)
+      console.error(`Usuário ${user.id} não é nem dono nem funcionário.`);
+      throw {
+        code: "UNAUTHORIZED",
+        message: "Configuração de usuário inválida.",
+      };
+    }
 
-    const { passwordHash, ...userWithoutPassword } = user;
+    const token = jwt.sign(payload, secret, { expiresIn: "7d" });
+
+    // --- MUDANÇA AQUI ---
+    // Removemos o ownedAccount e clinic do objeto de retorno para
+    // manter a resposta limpa, assim como era antes.
+    const { passwordHash, clinic, ownedAccount, ...userWithoutPassword } = user;
 
     return { user: userWithoutPassword, token };
   }
@@ -60,7 +95,6 @@ export class AuthService {
     // 1. Verificar se o email ou CNPJ já existem
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      // Lançar um erro específico para conflito
       throw { code: "CONFLICT", message: "Este email já está em uso." };
     }
 
@@ -72,59 +106,59 @@ export class AuthService {
     // 2. Criptografar a senha
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // 3. Criar a Clínica e o Usuário em uma única transação
-    // Isso garante que se a criação do usuário falhar, a da clínica será desfeita.
+    // --- MUDANÇA AQUI ---
+    // A transação agora cria a nova arquitetura:
+    // User (Dono) -> Account (Empresa) -> Clinic (Primeira Loja)
     const result = await prisma.$transaction(async (tx) => {
-      // Encontrar o ID da função 'Admin' ou 'Proprietário'
-      // IMPORTANTE: Você precisa ter essa função cadastrada no seu banco!
-      const adminRole = await tx.role.findFirst({
-        where: { name: "admin" }, // ou o nome que você deu para o dono da clínica
-      });
-
-      if (!adminRole) {
-        throw new Error(
-          "Função de administrador não encontrada. Configure as funções no banco."
-        );
-      }
-
-      // Criar a clínica
-      const newClinic = await tx.clinic.create({
-        data: {
-          name: clinicName,
-          taxId: taxId,
-          // O status 'PENDING_PAYMENT' será o padrão definido no schema
-        },
-      });
-
-      // Criar o usuário
+      // 1. Criar o usuário (DONO)
+      // Note que clinicId e roleId são nulos, como manda o novo schema
       const newUser = await tx.user.create({
         data: {
           fullName,
           email,
           passwordHash,
-          clinicId: newClinic.id,
-          roleId: adminRole.id,
-        },
-        include: {
-          clinic: true,
+          clinicId: null,
+          roleId: null,
         },
       });
 
-      return newUser;
+      // 2. Criar a "Conta" (a empresa/dono do plano)
+      const newAccount = await tx.account.create({
+        data: {
+          ownerId: newUser.id,
+          // subscriptionId pode ser nulo por enquanto
+        },
+      });
+
+      // 3. Criar a *primeira* Clínica
+      const newClinic = await tx.clinic.create({
+        data: {
+          name: clinicName,
+          taxId: taxId,
+          status: "ACTIVE",
+          accountId: newAccount.id, // Liga a clínica à Conta
+        },
+      });
+
+      return { newUser, newAccount };
     });
 
     // 4. Gerar um token JWT para auto-login
     const secret = process.env.JWT_SECRET;
     if (!secret) throw new Error("Chave secreta JWT não configurada.");
 
-    const token = jwt.sign(
-      { userId: result.id, roleId: result.roleId, clinicId: result.clinicId },
-      secret,
-      { expiresIn: "7d" }
-    );
+    // --- MUDANÇA AQUI ---
+    // O payload do token de registro é de um DONO
+    const payload: UserPayload = {
+      userId: result.newUser.id,
+      roleId: null,
+      clinicId: null,
+      accountId: result.newAccount.id,
+    };
+    const token = jwt.sign(payload, secret, { expiresIn: "7d" });
 
     // 5. Retornar os dados
-    const { passwordHash: _, ...userWithoutPassword } = result;
+    const { passwordHash: _, ...userWithoutPassword } = result.newUser;
     return { user: userWithoutPassword, token };
   }
 
@@ -146,10 +180,12 @@ export class AuthService {
 
       const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
 
+      // --- MUDANÇA AQUI: Removido "onboarding@resend.dev" ---
+      // Usando o domínio de produção verificado
       await resend.emails.send({
-        from: "Acme <onboarding@resend.dev>",
+        from: "Belliun <nao-responda@belliun.com.br>",
         to: user.email,
-        subject: "Redefinição de Senha - AURA",
+        subject: "Redefinição de Senha - Belliun",
         html: `<p>Olá ${user.fullName},</p><p>Você solicitou a redefinição de sua senha. Clique no link abaixo para criar uma nova senha:</p><a href="${resetLink}">Redefinir Senha</a><p>Se você não solicitou isso, por favor, ignore este email.</p>`,
       });
     }

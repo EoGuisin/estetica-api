@@ -5,7 +5,7 @@ import { StockMovementService } from "../services/stockMovement.service";
 export class StockMovementController {
   static async create(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const data = createStockMovementSchema.parse(request.body);
 
       const movement = await StockMovementService.create(data, clinicId);
@@ -20,7 +20,7 @@ export class StockMovementController {
   }
 
   static async list(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const {
       page = "1",
       pageSize = "15",
@@ -44,7 +44,7 @@ export class StockMovementController {
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const { id } = request.params as { id: string };
 
       await StockMovementService.delete(id, clinicId);

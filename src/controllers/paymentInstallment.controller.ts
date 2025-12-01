@@ -8,7 +8,7 @@ import { PaymentStatus } from "@prisma/client";
 export class PaymentInstallmentController {
   static async registerPayment(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const { id } = request.params as { id: string };
       const data = registerPaymentSchema.parse(request.body);
 
@@ -29,7 +29,7 @@ export class PaymentInstallmentController {
   }
 
   static async list(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const {
       page = "1",
       pageSize = "10",
@@ -73,7 +73,7 @@ export class PaymentInstallmentController {
   }
 
   static async getById(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
     const installment = await PaymentInstallmentService.getById(id, clinicId);
     if (!installment) {

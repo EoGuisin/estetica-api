@@ -35,7 +35,7 @@ export class AttendanceController {
   }
 
   static async generateDocument(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { patientId, templateId } = z
       .object({
         patientId: z.string().uuid(),
@@ -54,7 +54,7 @@ export class AttendanceController {
 
   static async getAttendanceData(request: FastifyRequest, reply: FastifyReply) {
     const { appointmentId } = appointmentParamsSchema.parse(request.params);
-    const { clinicId } = request.user;
+    const { clinicId } = request;
 
     const data = await AttendanceService.getAttendanceData(
       appointmentId,
@@ -76,7 +76,7 @@ export class AttendanceController {
 
   static async listAttachments(request: FastifyRequest, reply: FastifyReply) {
     const { patientId } = patientParamsSchema.parse(request.params);
-    const { clinicId } = request.user;
+    const { clinicId } = request;
 
     // You might want to add a check to ensure the patient belongs to the clinic
     const attachments = await AttendanceService.listAttachments(patientId);
@@ -87,7 +87,7 @@ export class AttendanceController {
     request: FastifyRequest,
     reply: FastifyReply
   ) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const body = createSignedUrlSchema.parse(request.body);
 
     const signedUrlData = await AttendanceService.createSignedUploadUrl({
@@ -106,7 +106,7 @@ export class AttendanceController {
 
   static async deleteAttachment(request: FastifyRequest, reply: FastifyReply) {
     const { attachmentId } = attachmentParamsSchema.parse(request.params);
-    const { clinicId } = request.user;
+    const { clinicId } = request;
 
     await AttendanceService.deleteAttachment(attachmentId, clinicId);
     return reply.status(204).send();
@@ -125,7 +125,7 @@ export class AttendanceController {
     request: FastifyRequest,
     reply: FastifyReply
   ) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const body = createBeforeAfterSignedUrlSchema.parse(request.body);
 
     const signedUrlData = await AttendanceService.createBeforeAfterSignedUrl({
@@ -160,7 +160,7 @@ export class AttendanceController {
     reply: FastifyReply
   ) {
     const { imageId } = beforeAfterParamsSchema.parse(request.params);
-    const { clinicId } = request.user;
+    const { clinicId } = request;
 
     await AttendanceService.deleteBeforeAfterImage(imageId, clinicId);
     return reply.status(204).send();
@@ -178,7 +178,7 @@ export class AttendanceController {
     request: FastifyRequest,
     reply: FastifyReply
   ) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const body = createDocumentSignedUrlSchema.parse(request.body);
 
     const signedUrlData = await AttendanceService.createDocumentSignedUrl({
@@ -196,7 +196,7 @@ export class AttendanceController {
   }
 
   static async deleteDocument(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { documentId } = documentParamsSchema.parse(request.params);
 
     await AttendanceService.deleteDocument(documentId, clinicId);
@@ -205,7 +205,7 @@ export class AttendanceController {
 
   static async downloadDocument(request: FastifyRequest, reply: FastifyReply) {
     const { documentId } = documentParamsSchema.parse(request.params);
-    const { clinicId } = request.user;
+    const { clinicId } = request;
 
     const { signedUrl, fileName, fileType } =
       await AttendanceService.getDocumentDownloadUrl(documentId, clinicId);
@@ -218,7 +218,7 @@ export class AttendanceController {
     reply: FastifyReply
   ) {
     const { attachmentId } = attachmentParamsSchema.parse(request.params);
-    const { clinicId } = request.user;
+    const { clinicId } = request;
 
     const { signedUrl } = await AttendanceService.getAttachmentDownloadUrl(
       attachmentId,
@@ -236,7 +236,7 @@ export class AttendanceController {
     const { type } = z
       .object({ type: z.enum(["before", "after"]) })
       .parse(request.query);
-    const { clinicId } = request.user;
+    const { clinicId } = request;
 
     const { signedUrl } = await AttendanceService.getBeforeAfterDownloadUrl(
       imageId,

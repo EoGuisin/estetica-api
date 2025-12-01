@@ -8,7 +8,7 @@ import { ProductService } from "../services/product.service";
 export class ProductController {
   static async create(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const data = createProductSchema.parse(request.body);
 
       const product = await ProductService.create(data, clinicId);
@@ -31,7 +31,7 @@ export class ProductController {
   }
 
   static async list(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const {
       page = "1",
       pageSize = "10",
@@ -55,7 +55,7 @@ export class ProductController {
   }
 
   static async getById(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
 
     const product = await ProductService.getById(id, clinicId);
@@ -68,7 +68,7 @@ export class ProductController {
 
   static async update(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const { clinicId } = request.user;
+      const { clinicId } = request;
       const { id } = request.params as { id: string };
       const data = updateProductSchema.parse(request.body);
 
@@ -86,7 +86,7 @@ export class ProductController {
   }
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request.user;
+    const { clinicId } = request;
     const { id } = request.params as { id: string };
 
     try {
