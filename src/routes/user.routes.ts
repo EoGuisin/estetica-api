@@ -11,4 +11,6 @@ export async function userRoutes(app: FastifyInstance) {
   app.get("/:id", UserController.getById);
   app.put("/:id", UserController.update);
   app.delete("/:id", UserController.delete);
+
+  app.post("/signature", UserController.uploadSignature);
 }

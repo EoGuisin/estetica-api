@@ -3,69 +3,92 @@ import { authMiddleware } from "../middleware/auth.middleware";
 import { AttendanceController } from "../controllers/attendance.controller";
 
 export async function attendanceRoutes(app: FastifyInstance) {
-  app.addHook("preHandler", authMiddleware);
+  app.register(async (protectedRoutes) => {
+    protectedRoutes.addHook("preHandler", authMiddleware);
 
-  // Main route for the attendance page
-  app.get("/:appointmentId", AttendanceController.getAttendanceData);
-  app.put("/:appointmentId", AttendanceController.saveDiagnosis);
+    // Main route for the attendance page
+    protectedRoutes.get(
+      "/:appointmentId",
+      AttendanceController.getAttendanceData
+    );
+    protectedRoutes.put("/:appointmentId", AttendanceController.saveDiagnosis);
 
-  // Routes for attachments
-  app.get(
-    "/attachments/patient/:patientId",
-    AttendanceController.listAttachments
-  );
-  app.post(
-    "/attachments/signed-url",
-    AttendanceController.createSignedUploadUrl
-  );
-  app.post("/attachments", AttendanceController.saveAttachment);
-  app.delete(
-    "/attachments/:attachmentId",
-    AttendanceController.deleteAttachment
-  );
-  app.get(
-    "/attachments/:attachmentId/download",
-    AttendanceController.downloadAttachment
-  );
+    // Routes for attachments
+    protectedRoutes.get(
+      "/attachments/patient/:patientId",
+      AttendanceController.listAttachments
+    );
+    protectedRoutes.post(
+      "/attachments/signed-url",
+      AttendanceController.createSignedUploadUrl
+    );
+    protectedRoutes.post("/attachments", AttendanceController.saveAttachment);
+    protectedRoutes.delete(
+      "/attachments/:attachmentId",
+      AttendanceController.deleteAttachment
+    );
+    protectedRoutes.get(
+      "/attachments/:attachmentId/download",
+      AttendanceController.downloadAttachment
+    );
 
-  // Routes for before/after images
-  app.get(
-    "/before-after/:patientId",
-    AttendanceController.getBeforeAfterImages
-  );
-  app.post(
-    "/before-after/signed-url",
-    AttendanceController.createBeforeAfterSignedUrl
-  );
-  app.post("/before-after", AttendanceController.saveBeforeAfterImage);
-  app.patch("/before-after/:imageId", AttendanceController.updateAfterImage);
-  app.delete(
-    "/before-after/:imageId",
-    AttendanceController.deleteBeforeAfterImage
-  );
-  app.get(
-    "/before-after/:imageId/download",
-    AttendanceController.downloadBeforeAfterImage
-  );
+    // Routes for before/after images
+    protectedRoutes.get(
+      "/before-after/:patientId",
+      AttendanceController.getBeforeAfterImages
+    );
+    protectedRoutes.post(
+      "/before-after/signed-url",
+      AttendanceController.createBeforeAfterSignedUrl
+    );
+    protectedRoutes.post(
+      "/before-after",
+      AttendanceController.saveBeforeAfterImage
+    );
+    protectedRoutes.patch(
+      "/before-after/:imageId",
+      AttendanceController.updateAfterImage
+    );
+    protectedRoutes.delete(
+      "/before-after/:imageId",
+      AttendanceController.deleteBeforeAfterImage
+    );
+    protectedRoutes.get(
+      "/before-after/:imageId/download",
+      AttendanceController.downloadBeforeAfterImage
+    );
 
-  // Routes for documents (simplified)
-  app.get("/documents/patient/:patientId", AttendanceController.listDocuments);
-  app.post(
-    "/documents/signed-url",
-    AttendanceController.createDocumentSignedUrl
-  );
-  app.post("/documents", AttendanceController.saveDocument);
-  app.delete("/documents/:documentId", AttendanceController.deleteDocument);
-  app.get(
-    "/documents/:documentId/download",
-    AttendanceController.downloadDocument
-  );
+    // Routes for documents (simplified)
+    protectedRoutes.get(
+      "/documents/patient/:patientId",
+      AttendanceController.listDocuments
+    );
+    protectedRoutes.post(
+      "/documents/signed-url",
+      AttendanceController.createDocumentSignedUrl
+    );
+    protectedRoutes.post("/documents", AttendanceController.saveDocument);
+    protectedRoutes.delete(
+      "/documents/:documentId",
+      AttendanceController.deleteDocument
+    );
+    protectedRoutes.get(
+      "/documents/:documentId/download",
+      AttendanceController.downloadDocument
+    );
 
-  app.get(
-    "/documents/templates/:patientId",
-    AttendanceController.getDocumentTemplates
-  );
-  app.post("/documents/generate", AttendanceController.generateDocument);
+    protectedRoutes.get(
+      "/documents/templates/:patientId",
+      AttendanceController.getDocumentTemplates
+    );
+    protectedRoutes.post(
+      "/documents/generate",
+      AttendanceController.generateDocument
+    );
 
-  app.put("/diagnosis/:appointmentId", AttendanceController.updateDiagnosis);
+    protectedRoutes.put(
+      "/diagnosis/:appointmentId",
+      AttendanceController.updateDiagnosis
+    );
+  });
 }

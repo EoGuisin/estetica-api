@@ -82,3 +82,15 @@ export const documentParamsSchema = z.object({
 export const updateDiagnosisSchema = z.object({
   diagnosis: z.string().optional().nullable(),
 });
+
+export const signDocumentBodySchema = z.object({
+  signature: z.string().min(1, "A assinatura é obrigatória (base64)"),
+});
+
+export const generateDocumentSchema = z.object({
+  patientId: z.string().uuid(),
+  templateId: z.string().uuid(),
+  professionalId: z
+    .string()
+    .uuid({ message: "Selecione o profissional responsável" }),
+});

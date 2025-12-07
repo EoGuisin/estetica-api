@@ -48,4 +48,23 @@ export class UserController {
     await UserService.delete(id, clinicId);
     return reply.status(204).send();
   }
+
+  static async uploadSignature(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request;
+
+    // O arquivo vem no request.file() se usar @fastify/multipart
+    // Ou request.body se for base64 (menos eficiente p/ imagens grandes, mas funciona)
+
+    // Vamos assumir o padrão @fastify/multipart para streaming eficiente
+    const data = await request.file();
+
+    if (!data) {
+      return reply.status(400).send({ message: "Nenhum arquivo enviado." });
+    }
+
+    // Chama o service
+    const path = await UserService.uploadSignature(data, clinicId);
+
+    return reply.send({ path });
+  }
 }

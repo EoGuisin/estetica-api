@@ -130,8 +130,14 @@ export class AnamnesisService {
     clinicId: string,
     data: UpdateTemplateInput
   ) {
+    // 1. Buscamos o template e verificamos se ele já foi usado
     const template = await prisma.anamnesisTemplate.findFirst({
       where: { id, clinicId },
+      include: {
+        _count: {
+          select: { assessments: true },
+        },
+      },
     });
 
     if (!template) {
@@ -139,14 +145,69 @@ export class AnamnesisService {
     }
 
     const { sections, ...templateData } = data;
+    const hasAssessments = template._count.assessments > 0;
+
+    if (hasAssessments && sections) {
+      return prisma.$transaction(async (tx) => {
+        await tx.anamnesisTemplate.update({
+          where: { id },
+          data: {
+            isActive: false,
+            name: `${
+              template.name
+            } (Versão anterior - ${new Date().toLocaleDateString("pt-BR")})`,
+          },
+        });
+
+        // B. Cria o NOVO template (A nova versão ativa)
+        const newTemplate = await tx.anamnesisTemplate.create({
+          data: {
+            name: templateData.name || template.name,
+            description: templateData.description ?? template.description,
+            isActive: templateData.isActive ?? true, // O novo nasce ativo (ou conforme o form)
+            clinicId,
+          },
+        });
+
+        // C. Recria as seções e perguntas no NOVO template
+        for (const section of sections) {
+          const { questions, ...sectionData } = section;
+
+          const createdSection = await tx.anamnesisSection.create({
+            data: {
+              title: sectionData.title,
+              order: sectionData.order,
+              templateId: newTemplate.id, // Vincula ao NOVO ID
+            },
+          });
+
+          for (const question of questions) {
+            await this.createQuestionWithSubQuestions(
+              tx,
+              createdSection.id,
+              question,
+              null
+            );
+          }
+        }
+
+        return newTemplate; // Retorna o novo objeto
+      });
+    }
+
+    // 3. Se NÃO foi usado AINDA, ou se não estamos mexendo na estrutura (só renomeando),
+    // podemos usar a lógica antiga de substituir (Safe Update ou Overwrite)
 
     return prisma.$transaction(async (tx) => {
+      // Atualiza dados básicos
       const updatedTemplate = await tx.anamnesisTemplate.update({
         where: { id },
         data: templateData,
       });
 
-      if (sections) {
+      // Se enviou seções novas e NÃO tem uso, podemos apagar e recriar (lógica antiga)
+      if (sections && !hasAssessments) {
+        // Aqui é seguro fazer deleteMany pois não tem AssessmentResponse vinculado
         await tx.anamnesisSection.deleteMany({
           where: { templateId: id },
         });

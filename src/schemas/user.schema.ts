@@ -36,7 +36,8 @@ export const createUserSchema = z.object({
     .nullable()
     .or(z.literal("")), // Agora não é mais obrigatório e aceita ""
 
-  professionalCouncilRegistry: z.string().optional().nullable(), // Removi o .min(1) para não travar se o usuário limpar o campo
+  professionalCouncilRegistry: z.string().optional().nullable(),
+  signatureImagePath: z.string().optional().nullable(),
 });
 
 export const updateUserSchema = createUserSchema

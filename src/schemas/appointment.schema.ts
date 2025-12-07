@@ -5,7 +5,7 @@ export const createAppointmentSchema = z.object({
   patientId: z.string().uuid("ID do paciente inválido"),
   professionalId: z.string().uuid("ID do profissional inválido"),
   appointmentTypeId: z.string().uuid("ID do tipo de agendamento inválido"),
-  date: z.string().refine((date) => !isNaN(Date.parse(date)), {
+  date: z.string().refine((date) => !Number.isNaN(Date.parse(date)), {
     message: "Formato de data inválido",
   }),
   startTime: z
@@ -22,6 +22,7 @@ export const createAppointmentSchema = z.object({
     ),
   notes: z.string().optional().nullable(),
   treatmentPlanId: z.string().uuid().optional().nullable(),
+  treatmentPlanProcedureId: z.string().uuid(),
 });
 
 export const updateAppointmentStatusSchema = z.object({
@@ -31,6 +32,7 @@ export const updateAppointmentStatusSchema = z.object({
     "CANCELED",
     "COMPLETED",
     "IN_PROGRESS",
+    "WAITING",
   ]),
 });
 

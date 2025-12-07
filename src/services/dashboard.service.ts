@@ -27,7 +27,6 @@ export class DashboardService {
     endDate: Date,
     professionalIds?: string[]
   ) {
-    // Constrói a cláusula 'where' dinamicamente
     const whereClause: any = {
       professional: {
         clinicId: clinicId,
@@ -38,7 +37,6 @@ export class DashboardService {
       },
     };
 
-    // Adiciona o filtro de profissionais se ele for fornecido
     if (professionalIds && professionalIds.length > 0) {
       whereClause.professionalId = {
         in: professionalIds,
@@ -48,7 +46,6 @@ export class DashboardService {
     return prisma.appointment.findMany({
       where: whereClause,
       include: {
-        // 1. Paciente: Adicionar CPF e telefones
         patient: {
           select: {
             id: true,
@@ -58,23 +55,18 @@ export class DashboardService {
             phones: true,
           },
         },
-
-        // 2. Profissional: Já está OK para o modal
         professional: {
           select: {
             fullName: true,
             color: true,
           },
         },
-
-        // 3. Tipo de Agendamento: Faltando completamente
         appointmentType: {
           select: {
             name: true,
           },
         },
-
-        // 4. Plano de Tratamento: Faltando completamente
+        // AQUI ESTÃO AS MUDANÇAS CRUCIAIS:
         treatmentPlan: {
           include: {
             seller: {
@@ -82,8 +74,18 @@ export class DashboardService {
                 fullName: true,
               },
             },
+            // 1. Precisamos buscar os irmãos (outros agendamentos) para calcular "Sessão X de Y"
+            appointments: {
+              select: {
+                id: true,
+                date: true,
+                status: true,
+                treatmentPlanProcedureId: true, // Necessário para filtrar apenas os deste procedimento
+              },
+            },
             procedures: {
               select: {
+                id: true, // 2. OBRIGATÓRIO: Precisamos do ID para saber qual item do array é o nosso
                 contractedSessions: true,
                 completedSessions: true,
                 procedure: {

@@ -27,6 +27,7 @@ enum RoleType {
   PROFESSIONAL
   SECRETARY
   FINANCIAL
+  COMMERCIAL
 }
 
 enum CommissionTriggerEvent {
@@ -146,6 +147,7 @@ model User {
   roleId                      String?
   commissionPlanId            String?
   professionalCouncilRegistry String?
+  signatureImagePath          String?
   passwordResetTokens         PasswordResetToken[]
 
   clinic                Clinic?               @relation(fields: [clinicId], references: [id])
@@ -165,6 +167,7 @@ model User {
   ProfessionalCouncil   ProfessionalCouncil?  @relation(fields: [professionalCouncilId], references: [id])
   professionalCouncilId String?
   commissions           CommissionRecord[]
+  patientDocuments      PatientDocument[]
 
   @@map("users")
 }
@@ -466,6 +469,7 @@ model TreatmentPlanProcedure {
 
   treatmentPlan TreatmentPlan @relation(fields: [treatmentPlanId], references: [id], onDelete: Cascade)
   procedure     Procedure     @relation(fields: [procedureId], references: [id])
+  appointments  Appointment[]
 
   @@map("treatment_plan_procedures")
 }
@@ -478,21 +482,22 @@ model Appointment {
   notes     String?
   status    String   @default("SCHEDULED") // SCHEDULED, CONFIRMED, CANCELED, COMPLETED
 
-  patientId         String
-  professionalId    String
-  appointmentTypeId String
-  treatmentPlanId   String? // Optional, if it's a session from a plan
+  patientId                String
+  professionalId           String
+  appointmentTypeId        String
+  treatmentPlanId          String? // Optional, if it's a session from a plan
+  treatmentPlanProcedureId String?
 
-  patient         Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  professional    User               @relation(fields: [professionalId], references: [id])
-  appointmentType AppointmentType    @relation(fields: [appointmentTypeId], references: [id])
-  treatmentPlan   TreatmentPlan?     @relation(fields: [treatmentPlanId], references: [id])
-  assessment      PatientAssessment?
-  clinicalRecord  ClinicalRecord?
-  StockMovement   StockMovement[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  patient                Patient                 @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  professional           User                    @relation(fields: [professionalId], references: [id])
+  appointmentType        AppointmentType         @relation(fields: [appointmentTypeId], references: [id])
+  treatmentPlan          TreatmentPlan?          @relation(fields: [treatmentPlanId], references: [id])
+  assessment             PatientAssessment?
+  clinicalRecord         ClinicalRecord?
+  StockMovement          StockMovement[]
+  treatmentPlanProcedure TreatmentPlanProcedure? @relation(fields: [treatmentPlanProcedureId], references: [id])
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@map("appointments")
 }
@@ -663,17 +668,22 @@ enum DocumentStatus {
 }
 
 model PatientDocument {
-  id          String         @id @default(uuid())
-  patientId   String
-  templateId  String? // Link to the template used
-  fileName    String
-  description String?
-  filePath    String
-  fileType    String
-  size        Int
-  type        DocumentType
-  status      DocumentStatus @default(PENDING)
-  signedAt    DateTime?
+  id                   String         @id @default(uuid())
+  patientId            String
+  templateId           String? // Link to the template used
+  fileName             String
+  description          String?
+  filePath             String
+  fileType             String
+  size                 Int
+  type                 DocumentType
+  status               DocumentStatus @default(PENDING)
+  patientSignaturePath String?
+  signedAt             DateTime?
+  signatureToken       String?        @default(uuid())
+
+  professionalId String?
+  professional   User?   @relation(fields: [professionalId], references: [id])
 
   patient  Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
   template SpecialtyTemplate? @relation(fields: [templateId], references: [id])

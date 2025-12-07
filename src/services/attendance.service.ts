@@ -1,6 +1,6 @@
 import { prisma } from "../lib/prisma";
 import { supabase } from "../lib/supabase";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import {
   saveAttachmentSchema,
   saveBeforeAfterSchema,
@@ -13,13 +13,13 @@ import PdfService from "./pdf.service";
 const ATTACHMENTS_BUCKET = "attachments";
 const BEFORE_AFTER_BUCKET = "before-after";
 const DOCUMENTS_BUCKET = "documents";
+const SIGNATURES_BUCKET = "signatures";
 
 export class AttendanceService {
   static async getTemplatesForPatient(
     patientId: string,
     type: DocumentType
   ): Promise<any[]> {
-    // Get patient's treatment plan to find specialty
     const patient = await prisma.patient.findUniqueOrThrow({
       where: { id: patientId },
       include: {
@@ -68,14 +68,17 @@ export class AttendanceService {
     patientId: string;
     templateId: string;
     clinicId: string;
+    professionalId: string;
   }) {
-    // Get template
+    if (!data.professionalId) {
+      throw new Error("ID do profissional é obrigatório.");
+    }
+
     const template = await prisma.specialtyTemplate.findUniqueOrThrow({
       where: { id: data.templateId },
       include: { specialty: true },
     });
 
-    // Get patient data
     const patient = await prisma.patient.findUniqueOrThrow({
       where: { id: data.patientId },
       include: {
@@ -84,13 +87,7 @@ export class AttendanceService {
         treatmentPlans: {
           include: {
             procedures: {
-              include: {
-                procedure: {
-                  include: {
-                    specialty: true,
-                  },
-                },
-              },
+              include: { procedure: { include: { specialty: true } } },
             },
           },
           orderBy: { createdAt: "desc" },
@@ -99,13 +96,27 @@ export class AttendanceService {
       },
     });
 
-    // Get clinic data
     const clinic = await prisma.clinic.findUniqueOrThrow({
       where: { id: data.clinicId },
       include: { address: true },
     });
 
-    // Prepare treatment plan data
+    // Busca o profissional selecionado
+    const professional = await prisma.user.findUnique({
+      where: { id: data.professionalId },
+      select: { signatureImagePath: true, fullName: true },
+    });
+
+    // Gera URL da assinatura do profissional
+    let professionalSignatureUrl = null;
+    if (professional?.signatureImagePath) {
+      const { data: signData } = await supabase.storage
+        .from(SIGNATURES_BUCKET)
+        .createSignedUrl(professional.signatureImagePath, 60 * 10);
+      professionalSignatureUrl = signData?.signedUrl;
+    }
+
+    // Tratamento de variáveis
     let treatmentPlanData = null;
     if (patient.treatmentPlans.length > 0) {
       const plan = patient.treatmentPlans[0];
@@ -118,14 +129,15 @@ export class AttendanceService {
       };
     }
 
-    // Substitute variables in template
     const filledContent = substituteVariables(template.content, {
       patient,
       clinic,
       treatmentPlan: treatmentPlanData,
+      professionalSignatureUrl, // Passa a assinatura para o PDF inicial
+      patientSignatureUrl: null,
     });
 
-    // Generate unique filename
+    // Gera PDF
     const timestamp = Date.now();
     const fileName = `${template.type.toLowerCase()}_${patient.name.replace(
       / /g,
@@ -133,30 +145,24 @@ export class AttendanceService {
     )}_${timestamp}.pdf`;
     const filePath = `${data.clinicId}/${data.patientId}/${fileName}`;
 
-    // Generate PDF
     const pdfBuffer = await this.generatePDFFromHTML(
       filledContent,
       clinic,
       template.name
     );
 
-    // Upload to Supabase
     const { error: uploadError } = await supabase.storage
       .from(DOCUMENTS_BUCKET)
-      .upload(filePath, pdfBuffer, {
-        contentType: "application/pdf",
-      });
+      .upload(filePath, pdfBuffer, { contentType: "application/pdf" });
 
-    if (uploadError) {
-      console.error("Error uploading PDF:", uploadError);
-      throw new Error("Could not upload generated document");
-    }
+    if (uploadError) throw new Error("Erro ao fazer upload do PDF.");
 
-    // Save to database
+    // Salva no banco COM O PROFESSIONAL_ID
     const document = await prisma.patientDocument.create({
       data: {
         patientId: data.patientId,
         templateId: data.templateId,
+        professionalId: data.professionalId, // <--- O PULO DO GATO ESTÁ AQUI
         fileName,
         filePath,
         fileType: "application/pdf",
@@ -167,6 +173,164 @@ export class AttendanceService {
     });
 
     return document;
+  }
+
+  static async signDocument(data: {
+    documentId: string;
+    signatureBase64: string;
+  }) {
+    // 1. Busca documento e dados
+    const document = await prisma.patientDocument.findUniqueOrThrow({
+      where: { id: data.documentId },
+      include: {
+        patient: {
+          include: {
+            address: true,
+            phones: true,
+            treatmentPlans: {
+              include: {
+                procedures: {
+                  include: { procedure: { include: { specialty: true } } },
+                },
+              },
+              orderBy: { createdAt: "desc" },
+              take: 1,
+            },
+            appointments: {
+              orderBy: { date: "desc" },
+              take: 1,
+              select: { professionalId: true },
+            },
+          },
+        },
+        template: true,
+      },
+    });
+
+    if (document.status === "SIGNED") {
+      throw new Error("Este documento já foi assinado e finalizado.");
+    }
+
+    // --- NOVO: Descobre o ClinicId através do paciente dono do documento ---
+    const clinicId = document.patient.clinicId;
+    // ----------------------------------------------------------------------
+
+    if (!document.template) {
+      throw new Error(
+        "Documento sem template não pode ser assinado digitalmente."
+      );
+    }
+
+    // 2. Upload da assinatura do PACIENTE
+    const signatureBuffer = Buffer.from(
+      data.signatureBase64.replace(/^data:image\/\w+;base64,/, ""),
+      "base64"
+    );
+
+    // Usa a variável clinicId descoberta acima
+    const patientSignaturePath = `${clinicId}/${document.patientId}/signatures/${document.id}_patient.png`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .upload(patientSignaturePath, signatureBuffer, {
+        contentType: "image/png",
+        upsert: true,
+      });
+
+    if (uploadError) throw new Error("Erro ao salvar assinatura do paciente.");
+
+    // 3. URL assinada do PACIENTE
+    const { data: patSignData } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .createSignedUrl(patientSignaturePath, 120);
+
+    // 4. URL assinada do PROFISSIONAL
+    let professionalSignatureUrl = null;
+    let professionalId = null;
+
+    // (Lógica de buscar profissional mantida igual, usa professionalId se existir ou tenta descobrir)
+    if (document.professionalId) {
+      professionalId = document.professionalId;
+    } else {
+      // Fallbacks antigos
+      const plan = document.patient.treatmentPlans[0];
+      if (plan && plan.sellerId) professionalId = plan.sellerId;
+      else if (document.patient.appointments.length > 0)
+        professionalId = document.patient.appointments[0].professionalId;
+    }
+
+    if (professionalId) {
+      const professional = await prisma.user.findUnique({
+        where: { id: professionalId },
+        select: { signatureImagePath: true },
+      });
+
+      if (professional?.signatureImagePath) {
+        const { data: profSignData } = await supabase.storage
+          .from(SIGNATURES_BUCKET)
+          .createSignedUrl(professional.signatureImagePath, 120);
+
+        professionalSignatureUrl = profSignData?.signedUrl;
+      }
+    }
+
+    // Busca dados da clínica usando o ID descoberto
+    const clinic = await prisma.clinic.findUniqueOrThrow({
+      where: { id: clinicId }, // <--- Usa a variável local
+      include: { address: true },
+    });
+
+    // Dados do plano para o template (Mantido igual)
+    let treatmentPlanData = null;
+    const plan = document.patient.treatmentPlans[0];
+    if (plan) {
+      const proc = plan.procedures[0];
+      treatmentPlanData = {
+        specialty: proc?.procedure?.specialty?.name,
+        procedure: proc?.procedure?.name,
+        sessions: proc?.contractedSessions,
+        total: plan.total,
+      };
+    }
+
+    // 5. REGENERA O HTML
+    const filledContent = substituteVariables(document.template.content, {
+      patient: document.patient,
+      clinic,
+      treatmentPlan: treatmentPlanData,
+      professionalSignatureUrl,
+      patientSignatureUrl: patSignData?.signedUrl,
+    });
+
+    // 6. Gera o NOVO PDF
+    const pdfBuffer = await this.generatePDFFromHTML(
+      filledContent,
+      clinic,
+      document.fileName.replace(".pdf", "")
+    );
+
+    // 7. Sobrescreve o PDF antigo
+    const { error: pdfUploadError } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .upload(document.filePath, pdfBuffer, {
+        contentType: "application/pdf",
+        upsert: true,
+      });
+
+    if (pdfUploadError) throw new Error("Erro ao atualizar o PDF assinado.");
+
+    // 8. Atualiza status no banco
+    await prisma.patientDocument.update({
+      where: { id: data.documentId },
+      data: {
+        status: "SIGNED",
+        signedAt: new Date(),
+        patientSignaturePath: patientSignaturePath,
+        size: pdfBuffer.length,
+      },
+    });
+
+    return { success: true };
   }
 
   private static async generatePDFFromHTML(
@@ -299,13 +463,15 @@ export class AttendanceService {
     );
 
     return {
-      ...appointment,
-      assessments,
-      patientHistory,
+      appointment: appointment,
       patient: {
         ...appointment.patient,
         beforeAfterImages: imagesWithUrls,
       },
+      treatmentPlan: appointment.treatmentPlan,
+      clinicalRecord: appointment.clinicalRecord,
+      assessments,
+      patientHistory,
     };
   }
 

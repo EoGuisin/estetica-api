@@ -1,5 +1,6 @@
 import fastify, { FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import { ZodError } from "zod";
 import { authRoutes } from "./routes/auth.routes";
 import { dashboardRoutes } from "./routes/dashboard.routes";
@@ -31,9 +32,16 @@ import { reportRoutes } from "./routes/report.routes";
 import { authMiddleware } from "./middleware/auth.middleware";
 import { clinicAccessMiddleware } from "./middleware/clinic-access.middleware";
 import { accountRoutes } from "./routes/account.routes";
+import { publicRoutes } from "./routes/public.routes";
 
 export const app = fastify({
   bodyLimit: 5 * 1024 * 1024,
+});
+
+app.register(multipart, {
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
 });
 
 app.register(cors, {
@@ -46,6 +54,7 @@ app.get("/", () => {
 });
 
 app.register(authRoutes, { prefix: "/auth" });
+app.register(publicRoutes);
 
 app.register(async (app: FastifyInstance) => {
   app.addHook("preHandler", authMiddleware);
@@ -55,7 +64,7 @@ app.register(async (app: FastifyInstance) => {
 const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
   // 1. Autentica (sabe QUEM é e carrega o request.user)
   app.addHook("preHandler", authMiddleware);
-  
+
   // 2. Autoriza (Valida o header X-Clinic-Id para donos ou usa o clinicId do funcionário)
   app.addHook("preHandler", clinicAccessMiddleware);
 

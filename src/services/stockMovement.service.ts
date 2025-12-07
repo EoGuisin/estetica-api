@@ -8,34 +8,32 @@ export class StockMovementService {
    * atualizando a quantidade do produto correspondente.
    */
   static async create(data: CreateStockMovementInput, clinicId: string) {
-    const { productId, type, quantity, ...rest } = data;
+    const { productId, type, quantity, expenseDueDate, ...rest } = data;
 
     return prisma.$transaction(async (tx) => {
-      // 1. Busca o produto para garantir que ele existe e pertence à clínica.
+      // 1. Busca e valida produto (igual ao anterior)
       const product = await tx.product.findFirstOrThrow({
         where: { id: productId, clinicId },
       });
 
-      // 2. Calcula a nova quantidade em estoque com base no tipo de movimentação.
+      // 2. Calcula novo estoque (igual ao anterior)
       let newStock;
       if (type === "ENTRY") {
         newStock = product.currentStock + quantity;
       } else {
-        // 'EXIT'
         if (product.currentStock < quantity) {
-          // REGRA DE NEGÓCIO: Impede que o estoque fique negativo.
           throw new Error("Estoque insuficiente para a saída.");
         }
         newStock = product.currentStock - quantity;
       }
 
-      // 3. Atualiza o estoque do produto.
+      // 3. Atualiza produto
       await tx.product.update({
         where: { id: productId },
         data: { currentStock: newStock },
       });
 
-      // 4. Cria o registro da movimentação.
+      // 4. Cria movimentação
       const movement = await tx.stockMovement.create({
         data: {
           ...rest,
@@ -45,6 +43,29 @@ export class StockMovementService {
           date: new Date(data.date),
         },
       });
+
+      // 5. CRIAÇÃO OBRIGATÓRIA DE DESPESA
+      if (type === "ENTRY") {
+        // Garantido pelo Zod que totalValue e expenseDueDate existem aqui
+        if (!rest.totalValue)
+          throw new Error("Valor total é necessário para entradas.");
+
+        const description = `Compra Estoque: ${product.name} ${
+          rest.invoiceNumber ? `(NF: ${rest.invoiceNumber})` : ""
+        }`;
+
+        await tx.expense.create({
+          data: {
+            clinicId,
+            description,
+            amount: rest.totalValue,
+            dueDate: new Date(expenseDueDate!), // "!" pois o Zod já garantiu
+            status: "PENDING",
+            supplierId: rest.supplierId || null,
+            notes: `Gerado automaticamente via entrada de estoque ID: ${movement.id}`,
+          },
+        });
+      }
 
       return movement;
     });

@@ -35,6 +35,11 @@ export const TEMPLATE_VARIABLES = {
   // Date variables
   "data.hoje": "Data de hoje",
   "data.hojeExtenso": "Data de hoje por extenso",
+
+  "assinaturas.profissional":
+    "Imagem da assinatura do profissional (configurada no perfil)",
+  "assinaturas.paciente":
+    "Espaço para assinatura do paciente (preenchido ao assinar)",
 };
 
 export function substituteVariables(
@@ -43,6 +48,8 @@ export function substituteVariables(
     patient: any;
     clinic: any;
     treatmentPlan?: any;
+    professionalSignatureUrl?: string | null;
+    patientSignatureUrl?: string | null;
   }
 ): string {
   let result = template;
@@ -149,6 +156,40 @@ export function substituteVariables(
   const today = new Date();
   result = result.replace(/{{data\.hoje}}/g, formatDate(today));
   result = result.replace(/{{data\.hojeExtenso}}/g, formatDateExtensive(today));
+
+  if (data.professionalSignatureUrl) {
+    // Insere a imagem. Ajuste o max-height conforme necessário.
+    const imgTag = `<div style="display:inline-block; text-align:center;">
+        <img src="${data.professionalSignatureUrl}" style="max-height: 80px; max-width: 250px; object-fit: contain;" /><br/>
+        <span style="font-size: 10px;">Assinado digitalmente pelo profissional</span>
+    </div>`;
+    result = result.replace(/{{assinaturas\.profissional}}/g, imgTag);
+  } else {
+    // Se não tiver assinatura, coloca linha
+    result = result.replace(
+      /{{assinaturas\.profissional}}/g,
+      `<div style="margin-top: 30px; border-top: 1px solid #000; width: 250px; text-align: center;">Assinatura do Profissional</div>`
+    );
+  }
+
+  // 2. Assinatura do Paciente
+  if (data.patientSignatureUrl) {
+    const imgTag = `<div style="display:inline-block; text-align:center;">
+        <img src="${
+          data.patientSignatureUrl
+        }" style="max-height: 80px; max-width: 250px; object-fit: contain;" /><br/>
+        <span style="font-size: 10px;">Assinado digitalmente pelo paciente em ${new Date().toLocaleDateString(
+          "pt-BR"
+        )}</span>
+    </div>`;
+    result = result.replace(/{{assinaturas\.paciente}}/g, imgTag);
+  } else {
+    // Linha para assinar depois se imprimir
+    result = result.replace(
+      /{{assinaturas\.paciente}}/g,
+      `<div style="margin-top: 30px; border-top: 1px solid #000; width: 250px; text-align: center;">Assinatura do Paciente</div>`
+    );
+  }
 
   return result;
 }

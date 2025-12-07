@@ -16,50 +16,41 @@ class SessionLimitError extends Error {
 export class AppointmentService {
   static async updateStatus(
     appointmentId: string,
-    status: "SCHEDULED" | "CONFIRMED" | "CANCELED" | "COMPLETED" | "IN_PROGRESS"
+    status:
+      | "SCHEDULED"
+      | "CONFIRMED"
+      | "CANCELED"
+      | "COMPLETED"
+      | "IN_PROGRESS"
+      | "WAITING"
   ) {
-    // Use a transaction to ensure both appointment and session count are updated together
     return prisma.$transaction(async (tx) => {
-      // 1. Get the current state of the appointment before updating
-      const currentAppointment = await tx.appointment.findUniqueOrThrow({
-        where: { id: appointmentId },
-        select: { status: true, treatmentPlanId: true },
-      });
-
-      const oldStatus = currentAppointment.status;
-      const { treatmentPlanId } = currentAppointment;
-
-      // 2. Update the appointment status
       const updatedAppointment = await tx.appointment.update({
         where: { id: appointmentId },
         data: { status },
+        select: {
+          treatmentPlanProcedureId: true,
+          treatmentPlanId: true,
+        },
       });
 
-      // 3. If it's linked to a treatment plan, update the completed session count
-      if (treatmentPlanId) {
-        // Find the specific procedure within the plan this appointment is for
-        // NOTE: This assumes the plan has one main procedure. For multi-procedure plans,
-        // you might need to link appointments to a `treatmentPlanProcedureId` directly.
-        const planProcedure = await tx.treatmentPlanProcedure.findFirst({
-          where: { treatmentPlanId: treatmentPlanId },
+      // 2. LÓGICA DE CORREÇÃO (Recontagem Segura)
+      // Se este agendamento está vinculado a um procedimento específico de um plano...
+      if (updatedAppointment.treatmentPlanProcedureId) {
+        // ...contamos quantos agendamentos COMPLETED existem para esse procedimento no banco
+        const realCompletedCount = await tx.appointment.count({
+          where: {
+            treatmentPlanProcedureId:
+              updatedAppointment.treatmentPlanProcedureId,
+            status: "COMPLETED",
+          },
         });
 
-        if (planProcedure) {
-          // Increment count if moving TO completed
-          if (status === "COMPLETED" && oldStatus !== "COMPLETED") {
-            await tx.treatmentPlanProcedure.update({
-              where: { id: planProcedure.id },
-              data: { completedSessions: { increment: 1 } },
-            });
-          }
-          // Decrement count if moving FROM completed
-          else if (status !== "COMPLETED" && oldStatus === "COMPLETED") {
-            await tx.treatmentPlanProcedure.update({
-              where: { id: planProcedure.id },
-              data: { completedSessions: { decrement: 1 } },
-            });
-          }
-        }
+        // ...e atualizamos o contador com o valor REAL exato (nunca será negativo)
+        await tx.treatmentPlanProcedure.update({
+          where: { id: updatedAppointment.treatmentPlanProcedureId },
+          data: { completedSessions: realCompletedCount },
+        });
       }
 
       return updatedAppointment;
@@ -67,18 +58,19 @@ export class AppointmentService {
   }
 
   static async create(clinicId: string, data: CreateAppointmentInput) {
-    // --- NEW VALIDATION LOGIC STARTS HERE ---
-    if (data.treatmentPlanId) {
-      // Find the procedure within the plan to get session limits
-      const planProcedure = await prisma.treatmentPlanProcedure.findFirst({
-        where: { treatmentPlanId: data.treatmentPlanId },
+    // --- LÓGICA DE VALIDAÇÃO CORRIGIDA ---
+
+    // Se estivermos vinculando a um procedimento específico do plano
+    if (data.treatmentPlanProcedureId) {
+      const planItem = await prisma.treatmentPlanProcedure.findUnique({
+        where: { id: data.treatmentPlanProcedureId },
       });
 
-      if (planProcedure) {
-        // Count existing appointments for this plan that are NOT canceled
+      if (planItem) {
+        // Conta agendamentos DESTE procedimento específico
         const existingAppointments = await prisma.appointment.findMany({
           where: {
-            treatmentPlanId: data.treatmentPlanId,
+            treatmentPlanProcedureId: data.treatmentPlanProcedureId, // Busca pelo item específico
             NOT: {
               status: "CANCELED",
             },
@@ -86,19 +78,20 @@ export class AppointmentService {
           select: { date: true, startTime: true },
         });
 
-        // Check if the number of scheduled sessions is already at the limit
-        if (existingAppointments.length >= planProcedure.contractedSessions) {
+        // Verifica o limite
+        if (existingAppointments.length >= planItem.contractedSessions) {
           const scheduledDates = existingAppointments.map((apt) =>
             format(new Date(apt.date), "dd/MM/yyyy", { locale: ptBR })
           );
+
           throw new SessionLimitError(
-            `Todas as ${planProcedure.contractedSessions} sessões contratadas já foram agendadas.`,
+            `Todas as ${planItem.contractedSessions} sessões contratadas para este procedimento já foram agendadas.`,
             scheduledDates
           );
         }
       }
     }
-    // --- NEW VALIDATION LOGIC ENDS HERE ---
+    // --- FIM DA VALIDAÇÃO ---
 
     const appointment = await prisma.appointment.create({
       data: {
@@ -110,6 +103,8 @@ export class AppointmentService {
         notes: data.notes,
         date: new Date(data.date),
         treatmentPlanId: data.treatmentPlanId,
+        // Salva o vínculo específico
+        treatmentPlanProcedureId: data.treatmentPlanProcedureId,
       },
     });
 

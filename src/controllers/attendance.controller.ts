@@ -16,6 +16,8 @@ import {
   createDocumentSignedUrlSchema,
   saveDocumentSchema,
   updateDiagnosisSchema,
+  signDocumentBodySchema,
+  generateDocumentSchema,
 } from "../schemas/attendance.schema";
 import z from "zod";
 
@@ -36,17 +38,17 @@ export class AttendanceController {
 
   static async generateDocument(request: FastifyRequest, reply: FastifyReply) {
     const { clinicId } = request;
-    const { patientId, templateId } = z
-      .object({
-        patientId: z.string().uuid(),
-        templateId: z.string().uuid(),
-      })
-      .parse(request.body);
+    // Não pegamos mais o user.id aqui para definir o profissional
+
+    // Parse do body usando o schema atualizado
+    const { patientId, templateId, professionalId } =
+      generateDocumentSchema.parse(request.body);
 
     const document = await AttendanceService.generateDocumentFromTemplate({
       patientId,
       templateId,
       clinicId,
+      professionalId, // <--- Usa o ID que veio do Frontend (Select)
     });
 
     return reply.status(201).send(document);
@@ -255,5 +257,19 @@ export class AttendanceController {
       diagnosis
     );
     return reply.send(clinicalRecord);
+  }
+
+  static async signDocument(request: FastifyRequest, reply: FastifyReply) {
+    const { documentId } = documentParamsSchema.parse(request.params);
+    const { signature } = signDocumentBodySchema.parse(request.body);
+
+    await AttendanceService.signDocument({
+      documentId,
+      signatureBase64: signature,
+    });
+
+    return reply
+      .status(200)
+      .send({ message: "Documento assinado com sucesso." });
   }
 }

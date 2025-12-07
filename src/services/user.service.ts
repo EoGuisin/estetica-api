@@ -1,10 +1,16 @@
 import { prisma } from "../lib/prisma";
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
+import { supabase } from "../lib/supabase";
+import { MultipartFile } from "@fastify/multipart";
+
+const SIGNATURES_BUCKET = "signatures";
 
 export class UserService {
   static async create(clinicId: string, data: any) {
-    const { specialtyIds, password, ...userData } = data;
+    // Extrai signatureImagePath junto com os outros dados
+    const { specialtyIds, password, signatureImagePath, ...userData } = data;
     const passwordHash = await bcrypt.hash(password, 10);
 
     return prisma.user.create({
@@ -12,6 +18,8 @@ export class UserService {
         ...userData,
         passwordHash,
         clinicId,
+        // Salva o caminho da assinatura
+        signatureImagePath: signatureImagePath || null,
         specialties: {
           connect: specialtyIds?.map((id: string) => ({ id })) || [],
         },
@@ -42,7 +50,6 @@ export class UserService {
         include: {
           specialties: true,
           role: true,
-          // --- INCLUSÃO ADICIONADA ---
           CommissionPlan: { select: { name: true } },
         },
         skip,
@@ -51,7 +58,7 @@ export class UserService {
       }),
       prisma.user.count({ where }),
     ]);
-    // Renomeia o campo para facilitar no frontend (de CommissionPlan para commissionPlan)
+
     const formattedUsers = users.map(({ CommissionPlan, ...user }) => ({
       ...user,
       commissionPlan: CommissionPlan,
@@ -68,7 +75,7 @@ export class UserService {
         ProfessionalCouncil: true,
       },
     });
-    // Formata a resposta para consistência
+
     if (user) {
       const { CommissionPlan, ProfessionalCouncil, ...rest } = user;
       return {
@@ -81,10 +88,10 @@ export class UserService {
   }
 
   static async update(id: string, data: any) {
-    const { specialtyIds, ...userData } = data;
+    // Extrai signatureImagePath aqui também
+    const { specialtyIds, signatureImagePath, ...userData } = data;
     await prisma.user.findFirstOrThrow({ where: { id } });
 
-    // Garante que o campo nulo não seja enviado como 'undefined' para o Prisma
     if (userData.commissionPlanId === "") userData.commissionPlanId = null;
     if (userData.professionalCouncilId === "")
       userData.professionalCouncilId = null;
@@ -93,6 +100,8 @@ export class UserService {
       where: { id },
       data: {
         ...userData,
+        // Atualiza a assinatura se ela vier no payload
+        signatureImagePath: signatureImagePath,
         specialties:
           specialtyIds === undefined
             ? undefined
@@ -106,5 +115,29 @@ export class UserService {
   static async delete(id: string, clinicId: string) {
     await prisma.user.findFirstOrThrow({ where: { id, clinicId } });
     return prisma.user.delete({ where: { id } });
+  }
+
+  static async uploadSignature(file: MultipartFile, clinicId: string) {
+    const fileExtension = file.filename.split(".").pop();
+    const fileName = `${randomUUID()}.${fileExtension}`;
+    // Organiza por clínica para não virar bagunça
+    const filePath = `${clinicId}/professionals/${fileName}`;
+
+    // Converte o stream para buffer para enviar ao Supabase
+    const buffer = await file.toBuffer();
+
+    const { data, error } = await supabase.storage
+      .from(SIGNATURES_BUCKET)
+      .upload(filePath, buffer, {
+        contentType: file.mimetype,
+        upsert: true,
+      });
+
+    if (error) {
+      console.error("Erro upload assinatura:", error);
+      throw new Error("Falha ao salvar assinatura no storage.");
+    }
+
+    return data.path; // Retorna o caminho para o frontend salvar no formulário
   }
 }
