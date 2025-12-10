@@ -148,6 +148,7 @@ model User {
   commissionPlanId            String?
   professionalCouncilRegistry String?
   signatureImagePath          String?
+  workingDays                 String[]             @default([])
   passwordResetTokens         PasswordResetToken[]
 
   clinic                Clinic?               @relation(fields: [clinicId], references: [id])

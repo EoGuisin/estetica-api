@@ -74,4 +74,18 @@ export class PatientController {
     await PatientService.delete(id, clinicId);
     return reply.status(204).send();
   }
+
+  static async import(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request;
+    const data = await request.file();
+
+    if (!data) {
+      return reply.status(400).send({ message: "Arquivo não enviado." });
+    }
+
+    const buffer = await data.toBuffer();
+    const result = await PatientService.importPatients(buffer, clinicId);
+
+    return reply.send(result);
+  }
 }

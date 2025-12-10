@@ -1,9 +1,9 @@
 import { prisma } from "../lib/prisma";
 import { CreateAppointmentInput } from "../schemas/appointment.schema";
-import { format } from "date-fns";
+import { format, getDay } from "date-fns"; // Importei getDay
 import { ptBR } from "date-fns/locale";
 
-// Custom Error class for better error handling
+// Custom Error classes
 class SessionLimitError extends Error {
   scheduledDates: string[];
   constructor(message: string, scheduledDates: string[]) {
@@ -12,6 +12,25 @@ class SessionLimitError extends Error {
     this.scheduledDates = scheduledDates;
   }
 }
+
+// Novo erro para conflitos de agenda
+class SchedulingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SchedulingError";
+  }
+}
+
+// Mapa para converter o número do dia (0-6) para a string do banco
+const DAY_MAP: Record<number, string> = {
+  0: "SUNDAY",
+  1: "MONDAY",
+  2: "TUESDAY",
+  3: "WEDNESDAY",
+  4: "THURSDAY",
+  5: "FRIDAY",
+  6: "SATURDAY",
+};
 
 export class AppointmentService {
   static async updateStatus(
@@ -34,10 +53,7 @@ export class AppointmentService {
         },
       });
 
-      // 2. LÓGICA DE CORREÇÃO (Recontagem Segura)
-      // Se este agendamento está vinculado a um procedimento específico de um plano...
       if (updatedAppointment.treatmentPlanProcedureId) {
-        // ...contamos quantos agendamentos COMPLETED existem para esse procedimento no banco
         const realCompletedCount = await tx.appointment.count({
           where: {
             treatmentPlanProcedureId:
@@ -46,7 +62,6 @@ export class AppointmentService {
           },
         });
 
-        // ...e atualizamos o contador com o valor REAL exato (nunca será negativo)
         await tx.treatmentPlanProcedure.update({
           where: { id: updatedAppointment.treatmentPlanProcedureId },
           data: { completedSessions: realCompletedCount },
@@ -58,41 +73,125 @@ export class AppointmentService {
   }
 
   static async create(clinicId: string, data: CreateAppointmentInput) {
-    // --- LÓGICA DE VALIDAÇÃO CORRIGIDA ---
+    // ---------------------------------------------------------
+    // 1. BUSCAR DADOS DO PROFISSIONAL E AGENDA
+    // ---------------------------------------------------------
+    const professional = await prisma.user.findUniqueOrThrow({
+      where: { id: data.professionalId },
+      select: {
+        fullName: true,
+        workingDays: true,
+        scheduleStartHour: true,
+        scheduleEndHour: true,
+      },
+    });
 
-    // Se estivermos vinculando a um procedimento específico do plano
+    const appointmentDate = new Date(data.date);
+    // Ajuste de fuso horário simples para garantir que pegamos o dia certo
+    // Adiciona 12h para evitar problemas de meia-noite caindo no dia anterior devido a timezone
+    const dateForCheck = new Date(data.date + "T12:00:00");
+
+    // ---------------------------------------------------------
+    // 2. VALIDAÇÃO DE DIA DE FUNCIONAMENTO
+    // ---------------------------------------------------------
+    const dayOfWeekNumber = getDay(dateForCheck); // 0 = Domingo, 1 = Segunda...
+    const dayOfWeekString = DAY_MAP[dayOfWeekNumber];
+
+    if (!professional.workingDays.includes(dayOfWeekString)) {
+      const diasTraduzidos = {
+        SUNDAY: "Domingo",
+        MONDAY: "Segunda",
+        TUESDAY: "Terça",
+        WEDNESDAY: "Quarta",
+        THURSDAY: "Quinta",
+        FRIDAY: "Sexta",
+        SATURDAY: "Sábado",
+      };
+
+      throw new SchedulingError(
+        `O profissional ${
+          professional.fullName
+        } não atende neste dia da semana (${
+          diasTraduzidos[dayOfWeekString as keyof typeof diasTraduzidos]
+        }).`
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 3. VALIDAÇÃO DE HORÁRIO DE EXPEDIENTE
+    // ---------------------------------------------------------
+    if (professional.scheduleStartHour && professional.scheduleEndHour) {
+      // Comparação de string HH:MM funciona bem (ex: "09:00" > "08:00")
+      if (
+        data.startTime < professional.scheduleStartHour ||
+        data.endTime > professional.scheduleEndHour
+      ) {
+        throw new SchedulingError(
+          `Horário fora do expediente do profissional (${professional.scheduleStartHour} às ${professional.scheduleEndHour}).`
+        );
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 4. VALIDAÇÃO DE CONFLITO DE HORÁRIO (OVERLAP)
+    // ---------------------------------------------------------
+    // Busca agendamentos do profissional no MESMO dia que não estejam cancelados
+    const conflicts = await prisma.appointment.findMany({
+      where: {
+        professionalId: data.professionalId,
+        date: appointmentDate, // Prisma compara data exata (YYYY-MM-DDT00:00:00.000Z) se o campo for DateTime
+        status: { not: "CANCELED" },
+      },
+      select: { startTime: true, endTime: true },
+    });
+
+    const hasOverlap = conflicts.some((existing) => {
+      // Lógica de colisão de horário:
+      // (NovoInicio < ExistenteFim) E (NovoFim > ExistenteInicio)
+      return (
+        data.startTime < existing.endTime && data.endTime > existing.startTime
+      );
+    });
+
+    if (hasOverlap) {
+      throw new SchedulingError(
+        "Já existe um agendamento para este profissional neste horário."
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 5. VALIDAÇÃO DE LIMITE DE SESSÕES (Sua lógica existente)
+    // ---------------------------------------------------------
     if (data.treatmentPlanProcedureId) {
       const planItem = await prisma.treatmentPlanProcedure.findUnique({
         where: { id: data.treatmentPlanProcedureId },
       });
 
       if (planItem) {
-        // Conta agendamentos DESTE procedimento específico
         const existingAppointments = await prisma.appointment.findMany({
           where: {
-            treatmentPlanProcedureId: data.treatmentPlanProcedureId, // Busca pelo item específico
-            NOT: {
-              status: "CANCELED",
-            },
+            treatmentPlanProcedureId: data.treatmentPlanProcedureId,
+            NOT: { status: "CANCELED" },
           },
           select: { date: true, startTime: true },
         });
 
-        // Verifica o limite
         if (existingAppointments.length >= planItem.contractedSessions) {
           const scheduledDates = existingAppointments.map((apt) =>
             format(new Date(apt.date), "dd/MM/yyyy", { locale: ptBR })
           );
 
           throw new SessionLimitError(
-            `Todas as ${planItem.contractedSessions} sessões contratadas para este procedimento já foram agendadas.`,
+            `Todas as ${planItem.contractedSessions} sessões contratadas já foram agendadas.`,
             scheduledDates
           );
         }
       }
     }
-    // --- FIM DA VALIDAÇÃO ---
 
+    // ---------------------------------------------------------
+    // 6. CRIAÇÃO DO AGENDAMENTO
+    // ---------------------------------------------------------
     const appointment = await prisma.appointment.create({
       data: {
         patientId: data.patientId,
@@ -101,9 +200,8 @@ export class AppointmentService {
         startTime: data.startTime,
         endTime: data.endTime,
         notes: data.notes,
-        date: new Date(data.date),
+        date: appointmentDate,
         treatmentPlanId: data.treatmentPlanId,
-        // Salva o vínculo específico
         treatmentPlanProcedureId: data.treatmentPlanProcedureId,
       },
     });
@@ -111,28 +209,19 @@ export class AppointmentService {
     return appointment;
   }
 
+  // ... (restante dos métodos listPatients, etc. mantidos iguais)
   static async listPatients(clinicId: string) {
     return prisma.patient.findMany({
       where: { clinicId },
-      select: {
-        id: true,
-        name: true,
-      },
-      orderBy: {
-        name: "asc",
-      },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
     });
   }
 
   static async listAppointmentTypes() {
     return prisma.appointmentType.findMany({
-      select: {
-        id: true,
-        name: true,
-      },
-      orderBy: {
-        name: "asc",
-      },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
     });
   }
 
@@ -144,9 +233,7 @@ export class AppointmentService {
       where: { clinicId, patientId },
       include: {
         procedures: {
-          include: {
-            procedure: true,
-          },
+          include: { procedure: true },
         },
       },
       orderBy: { createdAt: "desc" },

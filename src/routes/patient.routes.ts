@@ -11,4 +11,5 @@ export async function patientRoutes(app: FastifyInstance) {
   app.get("/:id", PatientController.getById);
   app.put("/:id", PatientController.update);
   app.delete("/:id", PatientController.delete);
+  app.post("/import", PatientController.import);
 }

@@ -38,6 +38,7 @@ export const createUserSchema = z.object({
 
   professionalCouncilRegistry: z.string().optional().nullable(),
   signatureImagePath: z.string().optional().nullable(),
+  workingDays: z.array(z.string()).optional(),
 });
 
 export const updateUserSchema = createUserSchema

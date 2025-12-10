@@ -128,6 +128,7 @@ export class CashRegisterService {
             paymentInstallment: {
               select: {
                 installmentNumber: true,
+                paymentMethod: true,
                 treatmentPlan: {
                   select: { patient: { select: { name: true } } },
                 },
