@@ -5,9 +5,17 @@ export class DashboardService {
    * Busca os profissionais de uma clínica específica.
    */
   static async getProfessionals(clinicId: string) {
+    // 1. Descobrir quem é o dono dessa clínica
+    const clinic = await prisma.clinic.findUnique({
+      where: { id: clinicId },
+      select: { account: { select: { ownerId: true } } },
+    });
+
+    const ownerId = clinic?.account.ownerId;
+
     return prisma.user.findMany({
       where: {
-        clinicId: clinicId,
+        OR: [{ clinicId: clinicId }, ...(ownerId ? [{ id: ownerId }] : [])],
         isProfessional: true,
       },
       select: {
@@ -15,6 +23,7 @@ export class DashboardService {
         fullName: true,
         color: true,
       },
+      orderBy: { fullName: "asc" },
     });
   }
 

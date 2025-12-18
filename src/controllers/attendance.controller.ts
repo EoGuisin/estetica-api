@@ -26,12 +26,14 @@ export class AttendanceController {
     request: FastifyRequest,
     reply: FastifyReply
   ) {
+    const { clinicId } = request;
     const { patientId } = patientParamsSchema.parse(request.params);
     const { type } = listDocumentsQuerySchema.parse(request.query);
 
     const templates = await AttendanceService.getTemplatesForPatient(
       patientId,
-      type
+      type,
+      clinicId
     );
     return reply.send(templates);
   }

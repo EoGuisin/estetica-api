@@ -10,8 +10,17 @@ export async function specialtyTemplateRoutes(app: FastifyInstance) {
 
   // CRUD routes
   app.post("/", SpecialtyTemplateController.create);
-  app.get("/specialty/:specialtyId", SpecialtyTemplateController.findMany);
-  app.get("/:templateId", SpecialtyTemplateController.findById);
-  app.put("/:templateId", SpecialtyTemplateController.update);
-  app.delete("/:templateId", SpecialtyTemplateController.delete);
+
+  // CORREÇÃO: Usar 'listBySpecialty' que é o nome real no Controller
+  app.get(
+    "/specialty/:specialtyId",
+    SpecialtyTemplateController.listBySpecialty
+  );
+
+  // CORREÇÃO: Usar 'getById' e padronizar o parametro para ':id'
+  app.get("/:id", SpecialtyTemplateController.getById);
+
+  // Padronizar para ':id'
+  app.put("/:id", SpecialtyTemplateController.update);
+  app.delete("/:id", SpecialtyTemplateController.delete);
 }

@@ -18,8 +18,10 @@ const SIGNATURES_BUCKET = "signatures";
 export class AttendanceService {
   static async getTemplatesForPatient(
     patientId: string,
-    type: DocumentType
+    type: DocumentType,
+    clinicIdFromRequest?: string
   ): Promise<any[]> {
+    // 1. Busca o paciente e seus planos para descobrir QUAIS especialidades ele usa
     const patient = await prisma.patient.findUniqueOrThrow({
       where: { id: patientId },
       include: {
@@ -27,41 +29,56 @@ export class AttendanceService {
           include: {
             procedures: {
               include: {
-                procedure: {
-                  include: {
-                    specialty: {
-                      include: {
-                        templates: {
-                          where: {
-                            type,
-                            isActive: true,
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
+                procedure: true, // Para pegar o specialtyId
               },
             },
           },
-          orderBy: { createdAt: "desc" },
-          take: 1,
+          // Pega todos os planos da clínica atual para varrer as especialidades
+          where: { clinicId: clinicIdFromRequest },
         },
       },
     });
 
-    if (!patient.treatmentPlans.length) {
+    // Define qual Clinic ID usar (preferência para o do request)
+    const targetClinicId = clinicIdFromRequest || patient.clinicId;
+
+    // 2. Extrai IDs únicos das especialidades dos procedimentos do paciente
+    const specialtyIds = new Set<string>();
+
+    patient.treatmentPlans.forEach((plan) => {
+      plan.procedures.forEach((proc) => {
+        if (proc.procedure?.specialtyId) {
+          specialtyIds.add(proc.procedure.specialtyId);
+        }
+      });
+    });
+
+    // Se o paciente não tem planos/procedimentos, não mostramos templates (ou mostramos todos da clínica?)
+    // Regra: Se não tem especialidade definida, não mostra nada para evitar erro.
+    if (specialtyIds.size === 0) {
       return [];
     }
 
-    const specialty =
-      patient.treatmentPlans[0].procedures[0]?.procedure?.specialty;
+    // 3. Busca templates filtrando:
+    // - Pela CLÍNICA ATUAL (Isolamento)
+    // - Pelo TIPO (Contrato/Termo)
+    // - Pelas ESPECIALIDADES que o paciente tem
+    const templates = await prisma.specialtyTemplate.findMany({
+      where: {
+        clinicId: targetClinicId, // <--- ISOLAMENTO GARANTIDO
+        type: type,
+        isActive: true,
+        specialtyId: {
+          in: Array.from(specialtyIds), // <--- APENAS ESPECIALIDADES DO PACIENTE
+        },
+      },
+      include: {
+        specialty: { select: { name: true } }, // Para mostrar no front de qual especialidade é
+      },
+      orderBy: { name: "asc" },
+    });
 
-    if (!specialty) {
-      return [];
-    }
-
-    return specialty.templates || [];
+    return templates;
   }
 
   static async generateDocumentFromTemplate(data: {

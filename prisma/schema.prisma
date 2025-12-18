@@ -119,6 +119,7 @@ model Clinic {
   trafficSources       TrafficSource[]
   appointmentTypes     AppointmentType[]
   procedures           Procedure[]
+  specialtyTemplates   SpecialtyTemplate[]
 
   @@map("clinics")
 }
@@ -728,10 +729,13 @@ model PatientDocument {
 model SpecialtyTemplate {
   id          String       @id @default(uuid())
   specialtyId String
-  name        String // Template name (e.g., "Termo Padrão Botox")
-  content     String       @db.Text // HTML content with variables
+  name        String // "Termo Padrão Botox"
+  content     String       @db.Text
   type        DocumentType // TERM or CONTRACT
   isActive    Boolean      @default(true)
+
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
 
   specialty        Specialty         @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
   patientDocuments PatientDocument[]

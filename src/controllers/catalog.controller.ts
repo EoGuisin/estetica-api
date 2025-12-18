@@ -58,7 +58,7 @@ export class CatalogController {
   }
 
   static async create(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request; // <--- PEGA O ID DA CLÍNICA
+    const { clinicId } = request;
     const { modelName } = request.params as { modelName: string };
     const model = getModel(modelName);
 
