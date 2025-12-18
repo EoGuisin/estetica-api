@@ -113,6 +113,12 @@ model Clinic {
   BankAccount          BankAccount[]
   FinancialTransaction FinancialTransaction[]
   CashRegisterSession  CashRegisterSession[]
+  roles                Role[]
+  professionalCouncils ProfessionalCouncil[]
+  specialties          Specialty[]
+  trafficSources       TrafficSource[]
+  appointmentTypes     AppointmentType[]
+  procedures           Procedure[]
 
   @@map("clinics")
 }
@@ -195,11 +201,15 @@ model CommissionPlan {
 
 model ProfessionalCouncil {
   id          String  @id @default(uuid())
-  name        String  @unique // Ex: "CRM", "COREN", "CRF"
-  description String? // Ex: "Conselho Regional de Medicina"
+  name        String
+  description String?
 
-  users User[] // Lista de usuários associados a este conselho
+  clinicId String?
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
 
+  users User[]
+
+  @@unique([name, clinicId])
   @@map("professional_councils")
 }
 
@@ -359,10 +369,14 @@ model Patient {
 
 model TrafficSource {
   id   String @id @default(uuid())
-  name String @unique
+  name String
+
+  clinicId String?
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
 
   patients Patient[]
 
+  @@unique([name, clinicId])
   @@map("traffic_sources")
 }
 
@@ -399,24 +413,32 @@ model Phone {
 
 model Role {
   id           String   @id @default(uuid())
-  name         String   @unique
+  name         String
   type         RoleType @default(ADMIN)
   description  String?
   isSuperAdmin Boolean  @default(false)
 
+  clinicId String?
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
+
   users User[]
 
+  @@unique([name, clinicId])
   @@map("roles")
 }
 
 model Specialty {
   id   String @id @default(uuid())
-  name String @unique
+  name String
+
+  clinicId String?
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
 
   procedures    Procedure[]
   professionals User[]              @relation("ProfessionalSpecialties")
   templates     SpecialtyTemplate[]
 
+  @@unique([name, clinicId])
   @@map("specialties")
 }
 
@@ -425,9 +447,13 @@ model Procedure {
   name          String
   standardPrice Decimal @db.Decimal(10, 2)
   description   String?
-  specialtyId   String
 
-  specialty      Specialty                @relation(fields: [specialtyId], references: [id])
+  specialtyId String
+  specialty   Specialty @relation(fields: [specialtyId], references: [id])
+
+  clinicId String?
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
+
   treatmentPlans TreatmentPlanProcedure[]
 
   @@map("procedures")
@@ -505,10 +531,14 @@ model Appointment {
 
 model AppointmentType {
   id   String @id @default(uuid())
-  name String @unique // Consultation, Follow-up, Procedure
+  name String
+
+  clinicId String?
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
 
   appointments Appointment[]
 
+  @@unique([name, clinicId])
   @@map("appointment_types")
 }
 

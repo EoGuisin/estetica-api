@@ -34,16 +34,44 @@ export class UserService {
     name?: string,
     document?: string
   ) {
-    const where: Prisma.UserWhereInput = { clinicId };
+    // 1. Primeiro, descobrimos quem é o Dono da Conta dessa Clínica
+    const clinic = await prisma.clinic.findUnique({
+      where: { id: clinicId },
+      select: { account: { select: { ownerId: true } } },
+    });
 
-    if (name) where.fullName = { contains: name, mode: "insensitive" };
-    if (document)
-      where.OR = [
-        { cpf: { contains: document } },
-        { email: { contains: document } },
-      ];
+    const ownerId = clinic?.account?.ownerId;
+
+    const where: Prisma.UserWhereInput = {
+      AND: [
+        {
+          OR: [
+            { clinicId: clinicId },
+            ...(ownerId
+              ? [{ id: ownerId, isProfessional: true }]
+              : []),
+          ],
+        },
+      ],
+    };
+
+    if (name) {
+      (where.AND as Prisma.UserWhereInput[]).push({
+        fullName: { contains: name, mode: "insensitive" },
+      });
+    }
+
+    if (document) {
+      (where.AND as Prisma.UserWhereInput[]).push({
+        OR: [
+          { cpf: { contains: document } },
+          { email: { contains: document } },
+        ],
+      });
+    }
 
     const skip = (page - 1) * pageSize;
+
     const [users, totalCount] = await prisma.$transaction([
       prisma.user.findMany({
         where,
@@ -63,6 +91,7 @@ export class UserService {
       ...user,
       commissionPlan: CommissionPlan,
     }));
+
     return { users: formattedUsers, totalCount };
   }
 
@@ -113,7 +142,13 @@ export class UserService {
   }
 
   static async delete(id: string, clinicId: string) {
-    await prisma.user.findFirstOrThrow({ where: { id, clinicId } });
+    await prisma.user.findFirstOrThrow({
+      where: {
+        id,
+        clinicId,
+      },
+    });
+
     return prisma.user.delete({ where: { id } });
   }
 

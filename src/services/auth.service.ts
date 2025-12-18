@@ -90,7 +90,8 @@ export class AuthService {
   }
 
   static async register(data: RegisterInput) {
-    const { email, taxId, password, fullName, clinicName } = data;
+    const { email, taxId, password, fullName, clinicName, isProfessional } =
+      data;
 
     // 1. Verificar se o email ou CNPJ já existem
     const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -117,17 +118,19 @@ export class AuthService {
           fullName,
           email,
           passwordHash,
-          clinicId: null,
-          roleId: null,
+          isProfessional: isProfessional,
+          scheduleStartHour: isProfessional ? "08:00" : null,
+          scheduleEndHour: isProfessional ? "18:00" : null,
+          appointmentDuration: isProfessional ? 60 : null,
+          workingDays: isProfessional
+            ? ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+            : [],
         },
       });
 
       // 2. Criar a "Conta" (a empresa/dono do plano)
       const newAccount = await tx.account.create({
-        data: {
-          ownerId: newUser.id,
-          // subscriptionId pode ser nulo por enquanto
-        },
+        data: { ownerId: newUser.id },
       });
 
       // 3. Criar a *primeira* Clínica
@@ -136,11 +139,28 @@ export class AuthService {
           name: clinicName,
           taxId: taxId,
           status: "ACTIVE",
-          accountId: newAccount.id, // Liga a clínica à Conta
+          accountId: newAccount.id,
         },
       });
 
-      return { newUser, newAccount };
+      const adminRole = await tx.role.create({
+        data: {
+          name: "Administrador",
+          type: "ADMIN",
+          description: "Acesso total ao sistema da clínica",
+          isSuperAdmin: true,
+          clinicId: newClinic.id, // VINCULADO À CLÍNICA!
+        },
+      });
+
+      const updatedUser = await tx.user.update({
+        where: { id: newUser.id },
+        data: {
+          roleId: adminRole.id,
+        },
+      });
+
+      return { newUser: updatedUser, newAccount };
     });
 
     // 4. Gerar um token JWT para auto-login

@@ -8,20 +8,25 @@ import {
 export class ProfessionalCouncilController {
   static async create(request: FastifyRequest, reply: FastifyReply) {
     try {
+      const { clinicId } = request; // <--- PEGA ID DA CLÍNICA
       const data = createProfessionalCouncilSchema.parse(request.body);
-      const council = await ProfessionalCouncilService.create(data);
+
+      const council = await ProfessionalCouncilService.create(data, clinicId);
       return reply.status(201).send(council);
     } catch (error: any) {
-      if (error.code === "P2002" && error.meta?.target.includes("name")) {
+      if (error.code === "P2002") {
         return reply
           .status(409)
-          .send({ message: "Um conselho com este nome já existe." });
+          .send({
+            message: "Um conselho com este nome já existe nesta clínica.",
+          });
       }
       throw error;
     }
   }
 
   static async list(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // <--- PEGA ID DA CLÍNICA
     const {
       page = "1",
       pageSize = "10",
@@ -36,6 +41,7 @@ export class ProfessionalCouncilController {
     const pageSizeNumber = Number.parseInt(pageSize, 10);
 
     const result = await ProfessionalCouncilService.list(
+      clinicId, // Passa para o service
       pageNumber,
       pageSizeNumber,
       name
@@ -44,8 +50,11 @@ export class ProfessionalCouncilController {
   }
 
   static async getById(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // <--- PEGA ID DA CLÍNICA
     const { id } = request.params as { id: string };
-    const council = await ProfessionalCouncilService.getById(id);
+
+    const council = await ProfessionalCouncilService.getById(id, clinicId);
+
     if (!council) {
       return reply
         .status(404)
@@ -55,15 +64,19 @@ export class ProfessionalCouncilController {
   }
 
   static async update(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // <--- PEGA ID DA CLÍNICA
     const { id } = request.params as { id: string };
     const data = updateProfessionalCouncilSchema.parse(request.body);
-    const council = await ProfessionalCouncilService.update(id, data);
+
+    const council = await ProfessionalCouncilService.update(id, data, clinicId);
     return reply.send(council);
   }
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // <--- PEGA ID DA CLÍNICA
     const { id } = request.params as { id: string };
-    await ProfessionalCouncilService.delete(id);
+
+    await ProfessionalCouncilService.delete(id, clinicId);
     return reply.status(204).send();
   }
 }

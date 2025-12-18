@@ -21,6 +21,7 @@ export const registerSchema = z.object({
   password: z
     .string()
     .min(8, { message: "A senha deve ter no mínimo 8 caracteres." }),
+  isProfessional: z.boolean().default(false),
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
