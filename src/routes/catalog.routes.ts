@@ -12,4 +12,5 @@ export async function catalogRoutes(app: FastifyInstance) {
   app.post("/:modelName", CatalogController.create);
   app.put("/:modelName/:id", CatalogController.update);
   app.delete("/:modelName/:id", CatalogController.delete);
+  app.post("/procedure/import", CatalogController.importProcedures);
 }
