@@ -296,15 +296,14 @@ model StockMovement {
   totalValue    Decimal?          @db.Decimal(10, 2) // Valor total (geralmente para entradas)
   invoiceNumber String? // Número da nota fiscal (geralmente para entradas)
   notes         String? // Observações
+  expiryDate    DateTime?
 
-  // Relacionamentos
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
 
-  // Opcional: Relacionar a saída a um procedimento/atendimento
   appointmentId String?
   appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 

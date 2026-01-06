@@ -7,6 +7,7 @@ import {
   attendedPatientsReportQuerySchema,
   cashStatementReportQuerySchema,
   commissionReportQuerySchema,
+  expiredProductsReportQuerySchema,
   inactivePatientsReportQuerySchema,
   paymentMethodsReportQuerySchema,
   professionalValueReportQuerySchema,
@@ -386,7 +387,6 @@ export class ReportController {
     }
   }
 
-  // --- NOVO MÉTODO: EXTRATO DE CAIXA ---
   static async generateCashStatementReport(
     request: FastifyRequest,
     reply: FastifyReply
@@ -416,5 +416,19 @@ export class ReportController {
         .status(500)
         .send({ message: "Erro interno ao gerar relatório." });
     }
+  }
+
+  static async generateExpiredProductsReport(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const query = expiredProductsReportQuerySchema.parse(request.query);
+    const pdf = await ReportService.generateExpiredProductsReport(
+      request.clinicId,
+      query
+    );
+    reply.header("Content-Type", "application/pdf");
+    reply.header("Content-Disposition", 'inline; filename="vencidos.pdf"');
+    return reply.send(pdf);
   }
 }

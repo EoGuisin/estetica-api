@@ -56,6 +56,10 @@ export class ProductService {
         include: {
           category: { select: { id: true, name: true } },
           brand: { select: { id: true, name: true } },
+          stockMovements: {
+            where: { type: "ENTRY" },
+            select: { expiryDate: true, type: true, quantity: true },
+          },
         },
         skip,
         take: pageSize,

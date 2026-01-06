@@ -33,6 +33,7 @@ import { authMiddleware } from "./middleware/auth.middleware";
 import { clinicAccessMiddleware } from "./middleware/clinic-access.middleware";
 import { accountRoutes } from "./routes/account.routes";
 import { publicRoutes } from "./routes/public.routes";
+import { clinicRoutes as clinicSettingsRoutes } from "./routes/clinic.routes";
 
 export const app = fastify({
   bodyLimit: 5 * 1024 * 1024,
@@ -95,6 +96,7 @@ const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
   app.register(cashRegisterRoutes, { prefix: "/cash-register" });
   app.register(bankAccountRoutes, { prefix: "/bank-accounts" });
   app.register(reportRoutes, { prefix: "/reports" });
+  app.register(clinicSettingsRoutes, { prefix: "/clinics" });
 };
 
 app.register(clinicRoutes);

@@ -24,6 +24,7 @@ import {
   attendedPatientsReportQuerySchema,
   cashStatementReportQuerySchema,
   commissionReportQuerySchema,
+  expiredProductsReportQuerySchema,
   inactivePatientsReportQuerySchema,
   paymentMethodsReportQuerySchema,
   professionalValueReportQuerySchema,
@@ -2460,5 +2461,91 @@ export class ReportService {
       </table>
     </body></html>
     `;
+  }
+
+  // Adicione aos imports: expiredProductsReportQuerySchema
+
+  static async generateExpiredProductsReport(
+    clinicId: string,
+    filters: z.infer<typeof expiredProductsReportQuerySchema>
+  ) {
+    const referenceDate = filters.date ? new Date(filters.date) : new Date();
+
+    const clinic = await prisma.clinic.findUnique({
+      where: { id: clinicId },
+      select: { name: true },
+    });
+
+    // Busca movimentações de entrada que já venceram
+    const expiredEntries = await prisma.stockMovement.findMany({
+      where: {
+        product: { clinicId },
+        type: "ENTRY",
+        expiryDate: { lt: referenceDate },
+      },
+      include: {
+        product: {
+          include: { category: true },
+        },
+      },
+      orderBy: { expiryDate: "asc" },
+    });
+
+    // O HTML seguirá o padrão dos outros relatórios
+    const html = this.getExpiredProductsHtml(
+      clinic!,
+      expiredEntries,
+      referenceDate
+    );
+
+    return PdfService.generatePdfFromHtml(html, {
+      format: "A4",
+      displayHeaderFooter: true,
+      headerTemplate: this.getPdfHeader(clinic!.name),
+      footerTemplate: this.getPdfFooter(),
+      margin: { top: "80px", bottom: "50px", left: "20px", right: "20px" },
+    });
+  }
+
+  private static getExpiredProductsHtml(
+    clinic: any,
+    entries: any[],
+    refDate: Date
+  ) {
+    let rows = entries
+      .map(
+        (move) => `
+    <tr>
+      <td>${move.product.name}</td>
+      <td>${move.product.category.name}</td>
+      <td>${move.quantity}</td>
+      <td style="color: red; font-weight: bold;">
+        ${format(move.expiryDate, "dd/MM/yyyy")}
+      </td>
+      <td>${move.invoiceNumber || "N/A"}</td>
+    </tr>
+  `
+      )
+      .join("");
+
+    return `
+    <html>
+      <head><style>/* copiar estilos da data-table dos outros métodos */</style></head>
+      <body>
+        <h2>Relatório de Produtos Vencidos</h2>
+        <p>Data de Referência: ${format(refDate, "dd/MM/yyyy")}</p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Produto</th><th>Categoria</th><th>Qtd Entrou</th><th>Vencimento</th><th>NF</th>
+            </tr>
+          </thead>
+          <tbody>${
+            rows || '<tr><td colspan="5">Nenhum produto vencido.</td></tr>'
+          }</tbody>
+        </table>
+      </body>
+    </html>
+  `;
   }
 }

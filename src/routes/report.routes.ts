@@ -41,4 +41,7 @@ export async function reportRoutes(app: FastifyInstance) {
 
   // GET /reports/cash-statement
   app.get("/cash-statement", ReportController.generateCashStatementReport);
+
+  // GET /reports/expired-products
+  app.get("/expired-products", ReportController.generateExpiredProductsReport);
 }

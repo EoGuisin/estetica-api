@@ -108,3 +108,8 @@ export const cashStatementReportQuerySchema = z.object({
     ])
     .optional(),
 });
+
+export const expiredProductsReportQuerySchema = z.object({
+  date: z.string().date().optional(),
+  categoryId: z.string().uuid().optional(),
+});
