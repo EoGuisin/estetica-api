@@ -24,7 +24,12 @@ export const createPatientSchema = z.object({
   birthDate: z
     .string()
     .refine((date) => !isNaN(Date.parse(date)), "Data de nascimento inválida."),
-  email: z.string().email("E-mail inválido.").optional().nullable(),
+  email: z
+    .string()
+    .email("E-mail inválido.")
+    .optional()
+    .nullable()
+    .or(z.literal("")),
   socialName: z.string().optional().nullable(),
   identityCard: z.string().optional().nullable(),
   gender: z.string().optional().nullable(),
