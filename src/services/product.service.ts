@@ -58,7 +58,15 @@ export class ProductService {
           brand: { select: { id: true, name: true } },
           stockMovements: {
             where: { type: "ENTRY" },
-            select: { expiryDate: true, type: true, quantity: true },
+            select: {
+              id: true,
+              expiryDate: true,
+              type: true,
+              quantity: true,
+              date: true,
+              invoiceNumber: true,
+            },
+            orderBy: { date: "desc" },
           },
         },
         skip,

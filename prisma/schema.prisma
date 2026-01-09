@@ -332,10 +332,12 @@ model Patient {
   imageUrl        String?
   cpf             String         @unique
   name            String
+  email           String?
   socialName      String?
   birthDate       DateTime
   identityCard    String?
   gender          String?
+  maritalStatus   String?
   ethnicity       String?
   motherName      String?
   occupation      String?

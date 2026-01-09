@@ -41,6 +41,8 @@ export class StockMovementService {
           type,
           quantity,
           date: new Date(data.date),
+          // Garante que se a string for vazia, salve como nulo no banco
+          expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
         },
       });
 

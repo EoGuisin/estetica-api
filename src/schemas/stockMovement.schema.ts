@@ -13,7 +13,8 @@ export const createStockMovementSchema = z
       .int()
       .positive({ message: "A quantidade deve ser maior que zero." }),
     date: z.string({ message: "A data é obrigatória." }),
-
+    expiryDate: z.string().optional().nullable(),
+    
     // Note que mantemos optional/nullable na definição base,
     // mas vamos validar condicionalmente abaixo
     totalValue: z.coerce.number().positive().optional().nullable(),

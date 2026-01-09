@@ -102,13 +102,25 @@ export class CatalogService {
       const row = rows[i];
       const rowNum = i + 2;
 
-      // Mapeia colunas (flexível para maiúsculas/minúsculas)
-      const name = row["Nome"] || row["nome"] || row["Procedimento"];
+      // CRIA UM NOVO OBJETO COM AS CHAVES LIMPAS (SEM ESPAÇOS)
+      const cleanRow: any = {};
+      Object.keys(row).forEach((key) => {
+        cleanRow[key.trim()] = row[key];
+      });
+
+      // AGORA BUSCA NAS CHAVES LIMPAS
+      const name =
+        cleanRow["Nome"] || cleanRow["nome"] || cleanRow["Procedimento"];
       const specialtyName =
-        row["Especialidade"] || row["especialidade"] || row["Categoria"];
-      const priceRaw = row["Preço"] || row["Valor"] || row["Preco"] || "0";
+        cleanRow["Especialidade"] ||
+        cleanRow["especialidade"] ||
+        cleanRow["Categoria"];
+      const priceRaw =
+        cleanRow["Preço"] || cleanRow["Valor"] || cleanRow["Preco"] || "0";
 
       if (!name || !specialtyName) {
+        // Log para você debugar se necessário
+        console.log(`Erro na linha ${rowNum}:`, cleanRow);
         results.errors.push(
           `Linha ${rowNum}: Nome e Especialidade são obrigatórios.`
         );

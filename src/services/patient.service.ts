@@ -23,6 +23,7 @@ export class PatientService {
             ? new Date(patientData.guardianBirthDate)
             : null,
           clinicId,
+          maritalStatus: patientData.maritalStatus,
           addressId: newAddress.id,
         },
       });

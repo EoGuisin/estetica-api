@@ -6,10 +6,12 @@ export const TEMPLATE_VARIABLES = {
   "paciente.dataNascimento": "Data de nascimento do paciente",
   "paciente.idade": "Idade do paciente",
   "paciente.genero": "Gênero do paciente",
+  "paciente.estadoCivil": "Estado civil do paciente",
   "paciente.nomeSocial": "Nome social do paciente",
   "paciente.nomeMae": "Nome da mãe do paciente",
-  "paciente.ocupacao": "Ocupação do paciente",
+  "paciente.profissao": "Profissão do paciente",
   "paciente.telefone": "Telefone principal do paciente",
+  "paciente.email": "E-mail do paciente",
 
   // Patient address
   "paciente.endereco.cep": "CEP",
@@ -28,7 +30,7 @@ export const TEMPLATE_VARIABLES = {
 
   // Treatment plan variables
   "plano.especialidade": "Nome da especialidade",
-  "plano.procedimento": "Nome do procedimento",
+  "plano.procedimento(s)": "Nome do(s) procedimento(s)",
   "plano.sessoes": "Número de sessões contratadas",
   "plano.valorTotal": "Valor total do tratamento",
 
@@ -70,6 +72,26 @@ export function substituteVariables(
     calculateAge(data.patient.birthDate).toString()
   );
   result = result.replace(/{{paciente\.genero}}/g, data.patient.gender || "");
+
+  const telefonePrincipal = data.patient.phones?.[0]?.number || "";
+  result = result.replace(
+    /{{paciente\.telefone}}/g,
+    formatPhone(telefonePrincipal) || ""
+  );
+
+  const maritalStatusMap: Record<string, string> = {
+    SINGLE: "Solteiro(a)",
+    MARRIED: "Casado(a)",
+    DIVORCED: "Divorciado(a)",
+    WIDOWED: "Viúvo(a)",
+    STABLE_UNION: "União Estável",
+  };
+
+  const maritalStatusLabel = data.patient.maritalStatus
+    ? maritalStatusMap[data.patient.maritalStatus] || data.patient.maritalStatus
+    : "";
+
+  result = result.replace(/{{paciente\.estadoCivil}}/g, maritalStatusLabel);
   result = result.replace(
     /{{paciente\.nomeSocial}}/g,
     data.patient.socialName || ""
@@ -79,8 +101,12 @@ export function substituteVariables(
     data.patient.motherName || ""
   );
   result = result.replace(
-    /{{paciente\.ocupacao}}/g,
+    /{{paciente\.profissao}}/g,
     data.patient.occupation || ""
+  );
+  result = result.replace(
+    /{{paciente\.email}}/g,
+    data.patient.email || "Não informado"
   );
 
   // Patient address
@@ -138,10 +164,22 @@ export function substituteVariables(
       /{{plano\.especialidade}}/g,
       data.treatmentPlan.specialty || ""
     );
+
+    // Lógica para múltiplos procedimentos
+    let procedimentosTexto = "";
+    if (Array.isArray(data.treatmentPlan.procedures)) {
+      procedimentosTexto = data.treatmentPlan.procedures
+        .map((p: any) => p.procedure?.name || p.name)
+        .filter(Boolean)
+        .join(", ");
+    } else {
+      procedimentosTexto = data.treatmentPlan.procedure || "";
+    }
     result = result.replace(
-      /{{plano\.procedimento}}/g,
-      data.treatmentPlan.procedure || ""
+      /{{plano\.procedimento\(s\)}}/g,
+      procedimentosTexto
     );
+
     result = result.replace(
       /{{plano\.sessoes}}/g,
       data.treatmentPlan.sessions?.toString() || ""
@@ -184,7 +222,6 @@ export function substituteVariables(
     </div>`;
     result = result.replace(/{{assinaturas\.paciente}}/g, imgTag);
   } else {
-    // Linha para assinar depois se imprimir
     result = result.replace(
       /{{assinaturas\.paciente}}/g,
       `<div style="margin-top: 30px; border-top: 1px solid #000; width: 250px; text-align: center;">Assinatura do Paciente</div>`
@@ -257,4 +294,14 @@ function formatCurrency(value: number): string {
     style: "currency",
     currency: "BRL",
   }).format(value);
+}
+
+function formatPhone(v: string): string {
+  if (!v) return "";
+  v = v.replace(/\D/g, "");
+  if (v.length === 11) {
+    return v.replace(/^(\d{2})(\d{5})(\d{4})$/, "($1) $2-$3");
+  } else {
+    return v.replace(/^(\d{2})(\d{4})(\d{4})$/, "($1) $2-$3");
+  }
 }
