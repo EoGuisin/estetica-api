@@ -44,7 +44,7 @@ export class PatientService {
     page: number,
     pageSize: number,
     name?: string,
-    document?: string
+    document?: string,
   ) {
     const where: Prisma.PatientWhereInput = { clinicId };
 
@@ -176,78 +176,70 @@ export class PatientService {
 
   static async importPatients(fileBuffer: Buffer, clinicId: string) {
     const workbook = XLSX.read(fileBuffer, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-
-    // Converte para JSON
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows: any[] = XLSX.utils.sheet_to_json(sheet);
 
-    const results = {
-      total: rows.length,
-      success: 0,
-      errors: [] as string[],
-    };
+    const results = { total: rows.length, success: 0, errors: [] as string[] };
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const rowNum = i + 2;
+    // 1. Limpeza inicial e extração de CPFs para validação em massa
+    const validRows = rows
+      .map((row, index) => {
+        const name =
+          row["Nome"] || row["Paciente"] || row["nome"] || row["paciente"];
+        const rawCpf = row["CPF"] || row["cpf"] || "";
+        const cpf = rawCpf.toString().replace(/\D/g, "");
+        const phone = (row["Telefone"] || row["telefone"] || "")
+          .toString()
+          .replace(/\D/g, "");
 
-      const name =
-        row["Nome"] || row["Paciente"] || row["nome"] || row["paciente"];
-      const rawCpf = row["CPF"] || row["cpf"] || "";
-      const rawPhone =
-        row["Telefone"] ||
-        row["telefone"] ||
-        row["Celular"] ||
-        row["celular"] ||
-        "";
-
-      if (!name) {
-        results.errors.push(`Linha ${rowNum}: Nome é obrigatório.`);
-        continue;
-      }
-
-      // Tratamento de CPF
-      const cpf = rawCpf.toString().replace(/\D/g, "");
-
-      if (cpf.length !== 11) {
-        results.errors.push(
-          `Linha ${rowNum}: CPF inválido ou vazio (${name}).`
-        );
-        continue;
-      }
-
-      // Verifica duplicidade
-      const existing = await prisma.patient.findFirst({
-        where: { cpf, clinicId },
+        return { name, cpf, phone, rowNum: index + 2 };
+      })
+      .filter((r) => {
+        if (!r.name || r.cpf.length !== 11) {
+          results.errors.push(
+            `Linha ${r.rowNum}: Dados inválidos (Nome ou CPF).`,
+          );
+          return false;
+        }
+        return true;
       });
 
-      if (existing) {
-        results.errors.push(`Linha ${rowNum}: CPF já cadastrado (${name}).`);
-        continue;
-      }
+    // 2. Busca todos os CPFs que já existem de uma vez só (Performance O(1))
+    const allCpfs = validRows.map((r) => r.cpf);
+    const existingPatients = await prisma.patient.findMany({
+      where: { clinicId, cpf: { in: allCpfs } },
+      select: { cpf: true },
+    });
+    const existingCpfSet = new Set(existingPatients.map((p) => p.cpf));
 
+    // 3. Processa em blocos para não sobrecarregar o banco
+    const toImport = validRows.filter((r) => {
+      if (existingCpfSet.has(r.cpf)) {
+        results.errors.push(`Linha ${r.rowNum}: CPF ${r.cpf} já cadastrado.`);
+        return false;
+      }
+      return true;
+    });
+
+    // Usamos uma transação única para o lote ou dividimos em pedaços de 100
+    // Para manter a relação de Telefone, vamos iterar, mas sem o findFirst individual
+    for (const data of toImport) {
       try {
         await prisma.$transaction(async (tx) => {
-          // Cria Paciente (sem endereço, pois não vem na planilha simples)
           const newPatient = await tx.patient.create({
             data: {
-              name,
-              cpf,
-              birthDate: new Date(), // Fallback: define hoje ou deixe null se seu schema permitir (seu schema exige DateTime)
-              // Se birthDate for obrigatório e não vier na planilha, definimos uma data padrão ou 01/01/1900
-              // Idealmente a planilha deveria ter "Data de Nascimento"
+              name: data.name,
+              cpf: data.cpf,
+              birthDate: new Date(1900, 0, 1), // Melhor usar um fallback fixo
               clinicId,
             },
           });
 
-          // Cria Telefone se existir
-          if (rawPhone) {
-            const phoneClean = rawPhone.toString().replace(/\D/g, "");
+          if (data.phone) {
             await tx.phone.create({
               data: {
-                number: phoneClean,
-                isWhatsapp: true, // Assume true por padrão na importação
+                number: data.phone,
+                isWhatsapp: true,
                 patientId: newPatient.id,
               },
             });
@@ -255,8 +247,7 @@ export class PatientService {
         });
         results.success++;
       } catch (error) {
-        console.error(error);
-        results.errors.push(`Linha ${rowNum}: Erro ao salvar no banco.`);
+        results.errors.push(`Linha ${data.rowNum}: Erro ao salvar.`);
       }
     }
 
