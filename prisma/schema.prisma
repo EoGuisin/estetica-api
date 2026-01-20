@@ -361,7 +361,7 @@ model CommissionTier {
 model Patient {
   id              String         @id @default(uuid())
   imageUrl        String?
-  cpf             String         @unique
+  cpf             String
   name            String
   email           String?
   socialName      String?
@@ -397,6 +397,7 @@ model Patient {
   MedicalReport   MedicalReport[]
   Prescription    Prescription[]
 
+  @@unique([cpf, clinicId])
   @@map("patients")
 }
 

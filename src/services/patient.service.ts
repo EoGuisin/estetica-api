@@ -181,73 +181,83 @@ export class PatientService {
 
     const results = { total: rows.length, success: 0, errors: [] as string[] };
 
-    // 1. Limpeza inicial e extração de CPFs para validação em massa
     const validRows = rows
       .map((row, index) => {
-        const name =
-          row["Nome"] || row["Paciente"] || row["nome"] || row["paciente"];
-        const rawCpf = row["CPF"] || row["cpf"] || "";
-        const cpf = rawCpf.toString().replace(/\D/g, "");
-        const phone = (row["Telefone"] || row["telefone"] || "")
-          .toString()
-          .replace(/\D/g, "");
+        // Busca as chaves de forma insensível a maiúsculas/minúsculas
+        const findKey = (names: string[]) => {
+          const key = Object.keys(row).find((k) =>
+            names.includes(k.toLowerCase().trim()),
+          );
+          return key ? row[key] : null;
+        };
+
+        const name = findKey(["nome", "paciente", "name"]);
+        let rawCpf = findKey(["cpf", "documento"]);
+        const phone = findKey(["telefone", "celular", "phone", "telefone "]);
+
+        // TRATAMENTO DO CPF: Limpa e garante 11 dígitos (adiciona zeros à esquerda)
+        const cpf = rawCpf
+          ? rawCpf.toString().replace(/\D/g, "").padStart(11, "0")
+          : "";
 
         return { name, cpf, phone, rowNum: index + 2 };
       })
       .filter((r) => {
         if (!r.name || r.cpf.length !== 11) {
           results.errors.push(
-            `Linha ${r.rowNum}: Dados inválidos (Nome ou CPF).`,
+            `Linha ${r.rowNum}: Nome ausente ou CPF inválido (${r.cpf}).`,
           );
           return false;
         }
         return true;
       });
 
-    // 2. Busca todos os CPFs que já existem de uma vez só (Performance O(1))
     const allCpfs = validRows.map((r) => r.cpf);
+
+    // Busca duplicados APENAS nesta clínica
     const existingPatients = await prisma.patient.findMany({
       where: { clinicId, cpf: { in: allCpfs } },
       select: { cpf: true },
     });
     const existingCpfSet = new Set(existingPatients.map((p) => p.cpf));
 
-    // 3. Processa em blocos para não sobrecarregar o banco
-    const toImport = validRows.filter((r) => {
-      if (existingCpfSet.has(r.cpf)) {
-        results.errors.push(`Linha ${r.rowNum}: CPF ${r.cpf} já cadastrado.`);
-        return false;
+    for (const data of validRows) {
+      if (existingCpfSet.has(data.cpf)) {
+        results.errors.push(
+          `Linha ${data.rowNum}: CPF ${data.cpf} já existe nesta clínica.`,
+        );
+        continue;
       }
-      return true;
-    });
 
-    // Usamos uma transação única para o lote ou dividimos em pedaços de 100
-    // Para manter a relação de Telefone, vamos iterar, mas sem o findFirst individual
-    for (const data of toImport) {
       try {
         await prisma.$transaction(async (tx) => {
           const newPatient = await tx.patient.create({
             data: {
               name: data.name,
               cpf: data.cpf,
-              birthDate: new Date(1900, 0, 1), // Melhor usar um fallback fixo
+              birthDate: new Date(1900, 0, 1),
               clinicId,
             },
           });
 
           if (data.phone) {
-            await tx.phone.create({
-              data: {
-                number: data.phone,
-                isWhatsapp: true,
-                patientId: newPatient.id,
-              },
-            });
+            const phoneClean = data.phone.toString().replace(/\D/g, "");
+            if (phoneClean) {
+              await tx.phone.create({
+                data: {
+                  number: phoneClean,
+                  isWhatsapp: true,
+                  patientId: newPatient.id,
+                },
+              });
+            }
           }
         });
         results.success++;
       } catch (error) {
-        results.errors.push(`Linha ${data.rowNum}: Erro ao salvar.`);
+        results.errors.push(
+          `Linha ${data.rowNum}: Erro inesperado ao salvar no banco.`,
+        );
       }
     }
 
