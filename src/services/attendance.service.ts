@@ -1,3 +1,4 @@
+//src/services/attendance.service.ts
 import { prisma } from "../lib/prisma";
 import { supabase } from "../lib/supabase";
 import { randomUUID } from "node:crypto";
@@ -16,6 +17,40 @@ const DOCUMENTS_BUCKET = "documents";
 const SIGNATURES_BUCKET = "signatures";
 
 export class AttendanceService {
+  static async checkStorageLimit(clinicId: string, newFileSize: number) {
+    const clinic = await prisma.clinic.findUniqueOrThrow({
+      where: { id: clinicId },
+      select: {
+        storageUsed: true,
+        account: {
+          select: {
+            subscription: {
+              select: { currentMaxStorage: true, status: true },
+            },
+          },
+        },
+      },
+    });
+
+    const subscription = clinic.account.subscription;
+
+    if (!subscription || subscription.status !== "active") {
+      throw new Error("Assinatura inativa ou inexistente.");
+    }
+
+    const currentUsed = clinic.storageUsed;
+    const sizeToAdd = BigInt(newFileSize);
+    const limit = subscription.currentMaxStorage;
+
+    if (currentUsed + sizeToAdd > limit) {
+      throw new Error(
+        "Limite de armazenamento excedido (10GB). Faça um upgrade para continuar enviando arquivos."
+      );
+    }
+
+    return true;
+  }
+
   static async getTemplatesForPatient(
     patientId: string,
     type: DocumentType,
@@ -556,6 +591,20 @@ export class AttendanceService {
   }
 
   static async saveAttachment(data: z.infer<typeof saveAttachmentSchema>) {
+    // CORREÇÃO AQUI: Usar findFirstOrThrow para evitar o erro de 'possibly null'
+    const clinic = await prisma.clinic.findFirstOrThrow({
+      where: { patients: { some: { id: data.patientId } } },
+    });
+
+    await this.checkStorageLimit(clinic.id, data.size);
+
+    await prisma.clinic.update({
+      where: { id: clinic.id },
+      data: {
+        storageUsed: { increment: data.size },
+      },
+    });
+
     return prisma.attachment.create({
       data: {
         patientId: data.patientId,
@@ -581,17 +630,26 @@ export class AttendanceService {
       .remove([attachment.filePath]);
 
     if (storageError) {
-      // Log the error but don't block DB deletion if file is already gone
       console.error("Supabase storage deletion error:", storageError.message);
+    }
+
+    const patient = await prisma.patient.findUnique({
+      where: { id: attachment.patientId },
+      select: { clinicId: true },
+    });
+
+    if (patient) {
+      await prisma.clinic.update({
+        where: { id: patient.clinicId },
+        data: {
+          storageUsed: { decrement: attachment.size },
+        },
+      });
     }
 
     await prisma.attachment.delete({
       where: { id: attachmentId },
     });
-
-    // ================= FIX IS HERE =================
-    // The redundant "return;" has been removed.
-    // ===============================================
   }
 
   static async getBeforeAfterImages(patientId: string) {

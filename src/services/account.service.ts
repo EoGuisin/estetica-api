@@ -63,15 +63,15 @@ export class AccountService {
 
     // 3. Verificar o limite
     const currentClinics = account._count.clinics;
-    const clinicLimit = account.subscription.plan.clinicLimit;
+    // const clinicLimit = account.subscription.plan.clinicLimit;
 
-    // (Use 0 ou -1 para ilimitado, se desejar)
-    if (clinicLimit > 0 && currentClinics >= clinicLimit) {
-      throw {
-        code: "FORBIDDEN",
-        message: `Limite de ${clinicLimit} clínicas atingido. Faça upgrade do seu plano.`,
-      };
-    }
+    // // (Use 0 ou -1 para ilimitado, se desejar)
+    // if (clinicLimit > 0 && currentClinics >= clinicLimit) {
+    //   throw {
+    //     code: "FORBIDDEN",
+    //     message: `Limite de ${clinicLimit} clínicas atingido. Faça upgrade do seu plano.`,
+    //   };
+    // }
 
     // 4. Tudo certo, criar a clínica
     return prisma.clinic.create({

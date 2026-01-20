@@ -1,3 +1,4 @@
+//src/services/user.service.ts
 import { prisma } from "../lib/prisma";
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -9,6 +10,35 @@ const SIGNATURES_BUCKET = "signatures";
 
 export class UserService {
   static async create(clinicId: string, data: any) {
+    const clinic = await prisma.clinic.findUniqueOrThrow({
+      where: { id: clinicId },
+      select: {
+        account: {
+          select: {
+            subscription: {
+              select: { currentMaxUsers: true, status: true },
+            },
+          },
+        },
+      },
+    });
+
+    const sub = clinic.account?.subscription;
+
+    if (!sub || (sub.status !== "active" && sub.status !== "trialing")) {
+      throw new Error("Sua assinatura não está ativa. Verifique o pagamento.");
+    }
+
+    const currentUsers = await prisma.user.count({
+      where: { clinicId: clinicId },
+    });
+
+    if (currentUsers >= sub.currentMaxUsers) {
+      throw new Error(
+        `Limite de usuários atingido (${sub.currentMaxUsers}). Faça um upgrade ou compre usuários adicionais.`
+      );
+    }
+
     // Extrai signatureImagePath junto com os outros dados
     const { specialtyIds, password, signatureImagePath, ...userData } = data;
     const passwordHash = await bcrypt.hash(password, 10);
@@ -47,9 +77,7 @@ export class UserService {
         {
           OR: [
             { clinicId: clinicId },
-            ...(ownerId
-              ? [{ id: ownerId, isProfessional: true }]
-              : []),
+            ...(ownerId ? [{ id: ownerId, isProfessional: true }] : []),
           ],
         },
       ],

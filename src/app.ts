@@ -34,6 +34,8 @@ import { clinicAccessMiddleware } from "./middleware/clinic-access.middleware";
 import { accountRoutes } from "./routes/account.routes";
 import { publicRoutes } from "./routes/public.routes";
 import { clinicRoutes as clinicSettingsRoutes } from "./routes/clinic.routes";
+import { webhookRoutes } from "./routes/webhook.routes";
+import { subscriptionRoutes } from "./routes/subscription.routes";
 
 export const app = fastify({
   bodyLimit: 5 * 1024 * 1024,
@@ -60,6 +62,7 @@ app.register(publicRoutes);
 app.register(async (app: FastifyInstance) => {
   app.addHook("preHandler", authMiddleware);
   app.register(accountRoutes, { prefix: "/account" });
+  app.register(subscriptionRoutes, { prefix: "/account" });
 });
 
 const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
