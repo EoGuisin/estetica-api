@@ -38,12 +38,13 @@ enum CommissionTriggerEvent {
 }
 
 model Account {
-  id      String   @id @default(uuid())
-  ownerId String   @unique
-  owner   User     @relation("AccountOwner", fields: [ownerId], references: [id])
-  clinics Clinic[]
-
+  id           String        @id @default(uuid())
+  ownerId      String        @unique
+  owner        User          @relation("AccountOwner", fields: [ownerId], references: [id])
+  clinics      Clinic[]
   subscription Subscription?
+
+  stripeCustomerId String? @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -52,11 +53,26 @@ model Account {
 }
 
 model SubscriptionPlan {
-  id          String  @id @default(uuid())
-  name        String  @unique // Ex: "Plano Básico", "Plano Pro"
-  clinicLimit Int
-  price       Decimal @db.Decimal(10, 2)
-  isActive    Boolean @default(true)
+  id   String @id @default(uuid())
+  name String @unique // "Essencial Mensal", "Experts Anual"
+
+  // Integração Stripe
+  stripeProductId String? // ID do Produto no Stripe
+  stripePriceId   String? // ID do Preço no Stripe
+
+  // Limites Base do Plano
+  maxUsers   Int    @default(1)
+  maxStorage BigInt @default(0) // Em Bytes (10GB = 10737418240)
+
+  // Funcionalidades (Feature Flags)
+  hasCrm    Boolean @default(false)
+  hasAi     Boolean @default(false)
+  hasApp    Boolean @default(false)
+  hasFunnel Boolean @default(false)
+  hasWhats  Boolean @default(false)
+
+  price    Decimal @db.Decimal(10, 2)
+  isActive Boolean @default(true)
 
   subscriptions Subscription[]
 
@@ -65,16 +81,30 @@ model SubscriptionPlan {
 
 // A assinatura ATIVA de uma conta
 model Subscription {
-  id        String    @id @default(uuid())
-  status    String // Ex: "ACTIVE", "CANCELED", "PAST_DUE"
-  startDate DateTime
-  endDate   DateTime? // Nulo para planos de renovação automática
+  id        String @id @default(uuid())
+  accountId String @unique
+  planId    String
 
-  accountId String  @unique
-  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  // Status do Stripe
+  stripeSubscriptionId String?  @unique
+  status               String // "active", "past_due", "canceled", "incomplete"
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
 
-  planId String
-  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+  // Limites ATIVOS (Plano Base + Adicionais comprados)
+  // Isso facilita a verificação na API sem ter que somar tabelas de adicionais toda vez
+  currentMaxUsers   Int
+  currentMaxStorage BigInt
+
+  // Features ATIVAS (Plano Base + Adicionais)
+  activeCrm    Boolean @default(false)
+  activeAi     Boolean @default(false)
+  activeApp    Boolean @default(false)
+  activeFunnel Boolean @default(false)
+  activeWhats  Boolean @default(false)
+
+  account Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  plan    SubscriptionPlan @relation(fields: [planId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -83,12 +113,13 @@ model Subscription {
 }
 
 model Clinic {
-  id        String       @id @default(uuid())
-  name      String
-  taxId     String       @unique
-  status    ClinicStatus @default(PENDING_PAYMENT)
-  addressId String?
-  accountId String
+  id          String       @id @default(uuid())
+  name        String
+  taxId       String       @unique
+  status      ClinicStatus @default(PENDING_PAYMENT)
+  addressId   String?
+  accountId   String
+  storageUsed BigInt       @default(0)
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
