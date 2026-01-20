@@ -1,117 +1,72 @@
-// prisma/seed.ts ATUALIZADO PARA LÓGICA CORRETA
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const STORAGE_10GB = BigInt(10) * BigInt(1024) * BigInt(1024) * BigInt(1024);
+  const STORAGE_100GB =
+    BigInt(100) * BigInt(1024) * BigInt(1024) * BigInt(1024);
+  const EXPIRATION_DATE = new Date("2200-01-01T00:00:00Z");
 
-  // --- CONFIGURAÇÃO DOS IDS DO STRIPE ---
-  // Vá no Stripe > Catálogo. Crie o Produto "Plano Essencial".
-  // Dentro dele, adicione o preço Mensal e o preço Anual.
-  const STRIPE_PROD_ESSENCIAL = "prod_Tmta0Ivq0JuL3B";
-  const STRIPE_PRICE_ESSENCIAL_MENSAL = "price_1SpJnQ98FBliezJxOCLkHyqt";
-  const STRIPE_PRICE_ESSENCIAL_ANUAL = "price_1SpMGb98FBliezJx6kFf13E9";
+  // IDs das suas contas existentes (conforme seu JSON)
+  const TARGET_ACCOUNTS = [
+    "1f4b837a-c051-43a0-b8a9-7bd432f97104",
+    "237d0e65-d920-4441-acdd-95fcff500575",
+  ];
 
-  // Crie o Produto "Plano Experts" com seus dois preços.
-  const STRIPE_PROD_EXPERTS = "prod_TmtnXmlqdFR6D8";
-  const STRIPE_PRICE_EXPERTS_MENSAL = "price_1SpJzv98FBliezJxT7Tndnl0";
-  const STRIPE_PRICE_EXPERTS_ANUAL = "price_1SpMHH98FBliezJx2qEilGfa";
-  // --------------------------------------
+  // ID do Plano Experts Anual (conforme seu JSON de subscribe-plans)
+  const EXPERTS_PLAN_ID = "9a385fb6-9b27-4bbf-b9ba-5aa65ec4f06f";
 
-  console.log("Criando planos no banco...");
+  console.log("🚀 Iniciando migração das contas master...");
 
-  // 1. Essencial Mensal
-  await prisma.subscriptionPlan.upsert({
-    where: { name: "Essencial Mensal" },
-    update: {
-      stripeProductId: STRIPE_PROD_ESSENCIAL,
-      stripePriceId: STRIPE_PRICE_ESSENCIAL_MENSAL,
-    },
-    create: {
-      name: "Essencial Mensal",
-      price: 249.0,
-      maxUsers: 5,
-      maxStorage: STORAGE_10GB,
-      hasCrm: false,
-      hasAi: false,
-      hasApp: false,
-      hasFunnel: false,
-      hasWhats: false,
-      stripeProductId: STRIPE_PROD_ESSENCIAL,
-      stripePriceId: STRIPE_PRICE_ESSENCIAL_MENSAL,
-    },
-  });
+  for (const accountId of TARGET_ACCOUNTS) {
+    console.log(`Configurando conta: ${accountId}`);
 
-  // 2. Essencial Anual (No banco é outro registro, mas no Stripe é o MESMO PRODUTO)
-  await prisma.subscriptionPlan.upsert({
-    where: { name: "Essencial Anual" },
-    update: {
-      stripeProductId: STRIPE_PROD_ESSENCIAL,
-      stripePriceId: STRIPE_PRICE_ESSENCIAL_ANUAL,
-    },
-    create: {
-      name: "Essencial Anual",
-      price: 2496.0,
-      maxUsers: 5,
-      maxStorage: STORAGE_10GB,
-      hasCrm: false,
-      hasAi: false,
-      hasApp: false,
-      hasFunnel: false,
-      hasWhats: false,
-      stripeProductId: STRIPE_PROD_ESSENCIAL,
-      stripePriceId: STRIPE_PRICE_ESSENCIAL_ANUAL,
-    },
-  });
+    await prisma.subscription.upsert({
+      where: { accountId: accountId },
+      update: {
+        planId: EXPERTS_PLAN_ID,
+        status: "active",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: EXPIRATION_DATE,
+        currentMaxUsers: 999, // Liberdade total de usuários
+        currentMaxStorage: STORAGE_100GB, // 100GB de espaço
+        // Ativando absolutamente todas as features
+        activeCrm: true,
+        activeAi: true,
+        activeApp: true,
+        activeFunnel: true,
+        activeWhats: true,
+      },
+      create: {
+        accountId: accountId,
+        planId: EXPERTS_PLAN_ID,
+        status: "active",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: EXPIRATION_DATE,
+        currentMaxUsers: 999,
+        currentMaxStorage: STORAGE_100GB,
+        activeCrm: true,
+        activeAi: true,
+        activeApp: true,
+        activeFunnel: true,
+        activeWhats: true,
+      },
+    });
 
-  // 3. Experts Mensal
-  await prisma.subscriptionPlan.upsert({
-    where: { name: "Experts Mensal" },
-    update: {
-      stripeProductId: STRIPE_PROD_EXPERTS,
-      stripePriceId: STRIPE_PRICE_EXPERTS_MENSAL,
-    },
-    create: {
-      name: "Experts Mensal",
-      price: 499.0,
-      maxUsers: 20,
-      maxStorage: STORAGE_10GB,
-      hasCrm: true,
-      hasAi: true,
-      hasApp: true,
-      hasFunnel: true,
-      hasWhats: true,
-      stripeProductId: STRIPE_PROD_EXPERTS,
-      stripePriceId: STRIPE_PRICE_EXPERTS_MENSAL,
-    },
-  });
+    console.log(
+      `✅ Conta ${accountId} atualizada com sucesso (Válida até 2200).`
+    );
+  }
 
-  // 4. Experts Anual
-  await prisma.subscriptionPlan.upsert({
-    where: { name: "Experts Anual" },
-    update: {
-      stripeProductId: STRIPE_PROD_EXPERTS,
-      stripePriceId: STRIPE_PRICE_EXPERTS_ANUAL,
-    },
-    create: {
-      name: "Experts Anual",
-      price: 4788.0,
-      maxUsers: 20,
-      maxStorage: STORAGE_10GB,
-      hasCrm: true,
-      hasAi: true,
-      hasApp: true,
-      hasFunnel: true,
-      hasWhats: true,
-      stripeProductId: STRIPE_PROD_EXPERTS,
-      stripePriceId: STRIPE_PRICE_EXPERTS_ANUAL,
-    },
-  });
-
-  console.log("Planos configurados corretamente!");
+  console.log("\n✨ Processo finalizado. Suas contas agora são 'VIPS'.");
 }
 
 main()
-  .catch((e) => console.error(e))
-  .finally(async () => await prisma.$disconnect());
+  .catch((e) => {
+    console.error("❌ Erro ao rodar o seed:");
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

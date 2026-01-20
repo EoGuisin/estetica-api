@@ -37,6 +37,10 @@ import { clinicRoutes as clinicSettingsRoutes } from "./routes/clinic.routes";
 import { webhookRoutes } from "./routes/webhook.routes";
 import { subscriptionRoutes } from "./routes/subscription.routes";
 
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 export const app = fastify({
   bodyLimit: 5 * 1024 * 1024,
 });
