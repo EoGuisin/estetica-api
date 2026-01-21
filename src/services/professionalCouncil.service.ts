@@ -14,33 +14,42 @@ export class ProfessionalCouncilService {
   }
 
   static async list(
-    clinicId: string,
+    clinicId: string, // Certifique-se de que está recebendo o clinicId
     page: number,
     pageSize: number,
     name?: string
   ) {
-    // Filtra: Da clínica OU Global (null)
+    const skip = (page - 1) * pageSize;
+
+    // AQUI ESTÁ O PONTO CRUCIAL:
     const where: Prisma.ProfessionalCouncilWhereInput = {
-      OR: [{ clinicId: clinicId }, { clinicId: null }],
+      clinicId: clinicId, // <--- OBRIGATÓRIO: Filtra apenas os registros da sua clínica
     };
 
+    // Filtro opcional por nome (se houver pesquisa)
     if (name) {
-      // AND para combinar a busca por nome com o filtro de tenancy
-      where.AND = [{ name: { contains: name, mode: "insensitive" } }];
+      where.name = {
+        contains: name,
+        mode: "insensitive",
+      };
     }
 
-    const skip = (page - 1) * pageSize;
-    const [data, totalCount] = await prisma.$transaction([
+    const [items, totalCount] = await prisma.$transaction([
       prisma.professionalCouncil.findMany({
-        where,
+        where, // Aplica o filtro aqui
         skip,
         take: pageSize,
         orderBy: { name: "asc" },
       }),
-      prisma.professionalCouncil.count({ where }),
+      prisma.professionalCouncil.count({ where }), // Aplica o filtro aqui também
     ]);
 
-    return { data, totalCount };
+    return {
+      data: items,
+      totalCount,
+      page,
+      pageSize,
+    };
   }
 
   // CORREÇÃO: Adicionado clinicId para verificar permissão de visualização
@@ -48,7 +57,7 @@ export class ProfessionalCouncilService {
     return prisma.professionalCouncil.findFirst({
       where: {
         id,
-        OR: [{ clinicId: clinicId }, { clinicId: null }],
+        clinicId, // <--- Garante que você não consegue ver detalhes de outra clínica pelo ID na URL
       },
     });
   }
@@ -72,11 +81,26 @@ export class ProfessionalCouncilService {
 
   // CORREÇÃO: Adicionado clinicId para garantir que só deleta o próprio registro
   static async delete(id: string, clinicId: string) {
-    // Garante que o registro pertence à clínica antes de deletar
-    await prisma.professionalCouncil.findFirstOrThrow({
-      where: { id, clinicId },
+    // 1. Tenta encontrar o registro que pertença especificamente a esta clínica
+    const council = await prisma.professionalCouncil.findFirst({
+      where: {
+        id: id,
+        clinicId: clinicId,
+      },
     });
 
-    return prisma.professionalCouncil.delete({ where: { id } });
+    // 2. Se não encontrar, lançamos um erro amigável que o Controller possa capturar
+    if (!council) {
+      // Você pode criar uma classe de erro customizada,
+      // mas aqui vamos lançar um erro simples para o exemplo
+      const error = new Error("Registro não encontrado ou permissão negada.");
+      (error as any).code = "NOT_FOUND";
+      throw error;
+    }
+
+    // 3. Se encontrou e pertence à clínica, deleta pelo ID único
+    return prisma.professionalCouncil.delete({
+      where: { id },
+    });
   }
 }

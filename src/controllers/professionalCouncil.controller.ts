@@ -15,11 +15,9 @@ export class ProfessionalCouncilController {
       return reply.status(201).send(council);
     } catch (error: any) {
       if (error.code === "P2002") {
-        return reply
-          .status(409)
-          .send({
-            message: "Um conselho com este nome já existe nesta clínica.",
-          });
+        return reply.status(409).send({
+          message: "Um conselho com este nome já existe nesta clínica.",
+        });
       }
       throw error;
     }
@@ -73,10 +71,27 @@ export class ProfessionalCouncilController {
   }
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request; // <--- PEGA ID DA CLÍNICA
-    const { id } = request.params as { id: string };
+    try {
+      const { clinicId } = request;
+      const { id } = request.params as { id: string };
 
-    await ProfessionalCouncilService.delete(id, clinicId);
-    return reply.status(204).send();
+      await ProfessionalCouncilService.delete(id, clinicId);
+
+      return reply.status(204).send();
+    } catch (error: any) {
+      // Se o erro for o que lançamos no service ou o P2025 do Prisma
+      if (error.code === "NOT_FOUND" || error.code === "P2025") {
+        return reply.status(404).send({
+          message:
+            "Conselho profissional não encontrado ou você não tem permissão para excluí-lo.",
+        });
+      }
+
+      // Erros inesperados
+      console.error(error);
+      return reply
+        .status(500)
+        .send({ message: "Erro interno ao excluir o registro." });
+    }
   }
 }
