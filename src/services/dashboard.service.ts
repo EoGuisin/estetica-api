@@ -23,6 +23,9 @@ export class DashboardService {
         id: true,
         fullName: true,
         color: true,
+        workingDays: true,
+        scheduleStartHour: true,
+        scheduleEndHour: true,
       },
       orderBy: { fullName: "asc" },
     });
