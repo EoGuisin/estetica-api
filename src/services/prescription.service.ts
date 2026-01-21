@@ -42,7 +42,7 @@ export class PrescriptionService {
 
   static async update(
     prescriptionId: string,
-    data: z.infer<typeof updatePrescriptionSchema>
+    data: z.infer<typeof updatePrescriptionSchema>,
   ) {
     return prisma.prescription.update({
       where: { id: prescriptionId },
@@ -58,18 +58,30 @@ export class PrescriptionService {
 
   static async generatePdf(
     prescriptionId: string,
-    clinicId: string
+    clinicId: string,
   ): Promise<Buffer> {
-    const prescription = await this.findById(prescriptionId);
+    // 1. Buscamos a prescrição incluindo os dados do profissional e seu conselho
+    const prescription = await prisma.prescription.findUniqueOrThrow({
+      where: { id: prescriptionId },
+      include: {
+        professional: {
+          include: {
+            ProfessionalCouncil: true, // Inclui o nome do conselho (CRM, CRO, etc)
+          },
+        },
+      },
+    });
+
     const clinic = await prisma.clinic.findUniqueOrThrow({
       where: { id: clinicId },
       include: { address: true },
     });
 
+    // 2. Passamos o objeto do profissional para o gerador de HTML
     const pdfBuffer = await this._generatePDFFromHTML(
       prescription.content,
       clinic,
-      "Receituário"
+      prescription.professional, // Passando o profissional aqui
     );
 
     return pdfBuffer;
@@ -78,54 +90,84 @@ export class PrescriptionService {
   private static async _generatePDFFromHTML(
     content: string,
     clinic: any,
-    documentTitle: string
+    professional: any,
   ): Promise<Buffer> {
     const headerTemplate = `
-    <div style="font-family: Arial, sans-serif; font-size: 9px; text-align: center; border-bottom: 1px solid #ccc; padding: 10px; width: 100%;">
-      <h1 style="margin: 0; font-size: 14px;">${clinic.name}</h1>
-      ${
-        clinic.address
-          ? `<p style="margin: 2px 0;">${clinic.address.street}, ${clinic.address.number} - ${clinic.address.city}/${clinic.address.state}</p>`
-          : ""
-      }
-      <p style="margin: 2px 0;">CNPJ: ${clinic.taxId}</p>
-    </div>
-  `;
+      <div style="font-family: Arial, sans-serif; font-size: 9px; text-align: center; border-bottom: 1px solid #ccc; padding: 10px; width: 100%;">
+        <h1 style="margin: 0; font-size: 14px;">${clinic.name}</h1>
+        ${clinic.address ? `<p style="margin: 2px 0;">${clinic.address.street}, ${clinic.address.number} - ${clinic.address.city}/${clinic.address.state}</p>` : ""}
+        <p style="margin: 2px 0;">CNPJ: ${clinic.taxId}</p>
+      </div>
+    `;
+
+    // Bloco de assinatura com os novos dados solicitados
+    const signatureBlock = `
+      <div style="text-align: center; font-family: Arial, sans-serif; margin-top: 25px;">
+        <div style="width: 350px; margin: 0 auto; border-top: 1px solid #000; padding-top: 8px;">
+          <p style="margin: 0; font-size: 13px; font-weight: bold;">${professional.fullName}</p>
+          <p style="margin: 2px 0; font-size: 11px; color: #333;">${clinic.name}</p>
+          <p style="margin: 0; font-size: 11px; color: #555;">
+            ${professional.ProfessionalCouncil?.name || "Conselho"}: ${professional.professionalCouncilRegistry || "N/A"}
+          </p>
+        </div>
+      </div>
+    `;
 
     const fullHtml = `
     <!DOCTYPE html>
-    <html>
+    <html style="height: 100%;">
       <head>
         <meta charset="UTF-8">
-        <title>${documentTitle}</title>
         <style>
-          body { 
-            font-family: Arial, sans-serif; 
-            padding: 2cm 1.5cm;
+          html {
+            height: 100%;
+          }
+
+          body {
+            margin: 0;
+            padding: 0.5cm 1.5cm;
+            font-family: Arial, sans-serif;
             font-size: 12px;
-            line-height: 1.6;
+            line-height: 1.5;
             color: #333;
+            min-height: calc(100vh - 50px);
+            display: flex;
+            flex-direction: column;
+          }
+
+          .content-area {
+            flex: 1 1 auto;
+          }
+
+          .signature-area {
+            margin-top: auto;
+            padding-top: 20px;
+            page-break-inside: avoid;
           }
         </style>
       </head>
       <body>
-        ${content}
+        <div class="content-area">
+          ${content}
+        </div>
+        <div class="signature-area">
+          ${signatureBlock}
+        </div>
       </body>
     </html>
-  `;
+    `;
 
-    const pdfBuffer = await PdfService.generatePdfFromHtml(fullHtml, {
+    return await PdfService.generatePdfFromHtml(fullHtml, {
       format: "A4",
       displayHeaderFooter: true,
       headerTemplate,
       footerTemplate: `
-      <div style="font-family: Arial, sans-serif; font-size: 8px; text-align: center; width: 100%;">
-        <span class="pageNumber"></span> / <span class="totalPages"></span>
-      </div>
-    `,
-      margin: { top: "120px", bottom: "60px", left: "20px", right: "20px" },
+        <div style="font-family: Arial, sans-serif; font-size: 8px; text-align: center; width: 100%;">
+          <span class="pageNumber"></span> / <span class="totalPages"></span>
+        </div>
+      `,
+      // Ajuste das margens para o Puppeteer não cortar o conteúdo
+      margin: { top: "120px", bottom: "50px", left: "20px", right: "20px" },
     });
-
-    return pdfBuffer;
   }
 }
