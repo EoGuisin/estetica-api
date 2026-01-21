@@ -1,0 +1,28 @@
+name: Deploy API Belliun
+
+on:
+  push:
+    branches:
+      - main # O deploy acontece sempre que você der push na branch main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          username: ${{ secrets.REMOTE_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            cd /var/www/belliun-api
+            git pull origin main
+            npm install
+            npx prisma generate
+            rm -rf dist
+            npm run build
+            # Reinicia o PM2 usando o caminho que descobrimos que funciona
+            pm2 restart belliun-api --update-env || pm2 start dist/src/server.js --name belliun-api

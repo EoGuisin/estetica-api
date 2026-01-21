@@ -389,9 +389,9 @@ export class AnamnesisService {
 
     let template = appointment.assessment?.template;
     if (!template) {
-      const clinicId = appointment.professional.clinicId;
+      // CORREÇÃO: Pegamos o clinicId do PACIENTE, não do profissional
+      const clinicId = appointment.patient.clinicId;
 
-      // Verificamos se existe um clinicId válido antes de buscar
       if (clinicId) {
         const foundTemplate = await prisma.anamnesisTemplate.findFirst({
           where: {
@@ -413,7 +413,6 @@ export class AnamnesisService {
             },
           },
         });
-        // Se encontrou, atribui. Se não, continua undefined.
         template = foundTemplate ?? undefined;
       }
     }
