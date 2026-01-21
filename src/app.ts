@@ -100,7 +100,8 @@ const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
     sub.addHook("preHandler", roleGuard(["ADMIN", "COMMERCIAL", "SECRETARY"]));
 
     sub.register(patientRoutes, { prefix: "/patients" });
-    sub.register(catalogRoutes, { prefix: "/catalogs" }); // Especialidades, Tipos de Agendamento, etc
+    sub.register(catalogRoutes, { prefix: "/catalogs" });
+    sub.register(specialtyRoutes, { prefix: "/specialties" });
     sub.register(treatmentPlanRoutes, { prefix: "/treatment-plans" });
     sub.register(anamnesisRoutes, { prefix: "/anamnesis" });
     sub.register(specialtyTemplateRoutes, { prefix: "/specialty-templates" });
