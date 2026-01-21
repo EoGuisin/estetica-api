@@ -26,8 +26,7 @@ export class AppointmentController {
 
       if (error.name === "SchedulingError") {
         return reply.status(400).send({
-          message: "Conflito de Agenda",
-          details: error.message,
+          message: error.message,
         });
       }
 
