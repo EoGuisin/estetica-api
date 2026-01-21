@@ -36,6 +36,7 @@ import { publicRoutes } from "./routes/public.routes";
 import { clinicRoutes as clinicSettingsRoutes } from "./routes/clinic.routes";
 import { webhookRoutes } from "./routes/webhook.routes";
 import { subscriptionRoutes } from "./routes/subscription.routes";
+import { roleGuard } from "./middleware/roleGuard";
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -75,40 +76,67 @@ app.register(async (app: FastifyInstance) => {
 });
 
 const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
-  // 1. Autentica (sabe QUEM é e carrega o request.user)
+  // Middlewares base: Quem é o usuário e em qual clínica ele está operando
   app.addHook("preHandler", authMiddleware);
-
-  // 2. Autoriza (Valida o header X-Clinic-Id para donos ou usa o clinicId do funcionário)
   app.addHook("preHandler", clinicAccessMiddleware);
 
-  // Registre todas as rotas de operação da clínica aqui
-  app.register(dashboardRoutes, { prefix: "/dashboard" });
-  app.register(appointmentRoutes, { prefix: "/appointments" });
-  app.register(catalogRoutes, { prefix: "/catalogs" });
-  app.register(patientRoutes, { prefix: "/patients" });
-  app.register(userRoutes, { prefix: "/users" });
-  app.register(specialtyRoutes, { prefix: "/specialties" });
-  app.register(treatmentPlanRoutes, { prefix: "/treatment-plans" });
-  app.register(anamnesisRoutes, { prefix: "/anamnesis" });
-  app.register(attendanceRoutes, { prefix: "/attendance" });
-  app.register(specialtyTemplateRoutes, { prefix: "/specialty-templates" });
-  app.register(medicalReportRoutes, { prefix: "/medical-reports" });
-  app.register(prescriptionRoutes, { prefix: "/prescriptions" });
-  app.register(professionalCouncilRoutes, { prefix: "/professional-councils" });
-  app.register(productCategoryRoutes, { prefix: "/product-categories" });
-  app.register(productBrandRoutes, { prefix: "/product-brands" });
-  app.register(supplierRoutes, { prefix: "/suppliers" });
-  app.register(productRoutes, { prefix: "/products" });
-  app.register(stockMovementRoutes, { prefix: "/stock-movements" });
-  app.register(commissionPlanRoutes, { prefix: "/commission-plans" });
-  app.register(paymentInstallmentRoutes, { prefix: "/payment-installments" });
-  app.register(expenseRoutes, { prefix: "/expenses" });
-  app.register(expenseCategoryRoutes, { prefix: "/expense-categories" });
-  app.register(commissionRecordRoutes, { prefix: "/commissions" });
-  app.register(cashRegisterRoutes, { prefix: "/cash-register" });
-  app.register(bankAccountRoutes, { prefix: "/bank-accounts" });
-  app.register(reportRoutes, { prefix: "/reports" });
-  app.register(clinicSettingsRoutes, { prefix: "/clinics" });
+  // --- GRUPO 1: AGENDA E ATENDIMENTO (Acesso: TODOS) ---
+  app.register(async (sub) => {
+    sub.addHook(
+      "preHandler",
+      roleGuard(["ADMIN", "COMMERCIAL", "SECRETARY", "PROFESSIONAL"])
+    );
+
+    sub.register(dashboardRoutes, { prefix: "/dashboard" });
+    sub.register(appointmentRoutes, { prefix: "/appointments" });
+    sub.register(attendanceRoutes, { prefix: "/attendance" });
+    sub.register(medicalReportRoutes, { prefix: "/medical-reports" });
+    sub.register(prescriptionRoutes, { prefix: "/prescriptions" });
+  });
+
+  // --- GRUPO 2: FINANCEIRO, ESTOQUE E CADASTROS (Acesso: ADM, COMERCIAL, SECRETÁRIA) ---
+  // Este grupo cobre quase tudo o que você listou como "Cadastros"
+  app.register(async (sub) => {
+    sub.addHook("preHandler", roleGuard(["ADMIN", "COMMERCIAL", "SECRETARY"]));
+
+    sub.register(patientRoutes, { prefix: "/patients" });
+    sub.register(catalogRoutes, { prefix: "/catalogs" }); // Especialidades, Tipos de Agendamento, etc
+    sub.register(treatmentPlanRoutes, { prefix: "/treatment-plans" });
+    sub.register(anamnesisRoutes, { prefix: "/anamnesis" });
+    sub.register(specialtyTemplateRoutes, { prefix: "/specialty-templates" });
+    sub.register(professionalCouncilRoutes, {
+      prefix: "/professional-councils",
+    });
+
+    // Estoque
+    sub.register(productRoutes, { prefix: "/products" });
+    sub.register(productCategoryRoutes, { prefix: "/product-categories" });
+    sub.register(productBrandRoutes, { prefix: "/product-brands" });
+    sub.register(supplierRoutes, { prefix: "/suppliers" });
+    sub.register(stockMovementRoutes, { prefix: "/stock-movements" });
+
+    // Financeiro
+    sub.register(bankAccountRoutes, { prefix: "/bank-accounts" });
+    sub.register(cashRegisterRoutes, { prefix: "/cash-register" });
+    sub.register(expenseRoutes, { prefix: "/expenses" });
+    sub.register(expenseCategoryRoutes, { prefix: "/expense-categories" });
+    sub.register(paymentInstallmentRoutes, { prefix: "/payment-installments" });
+    sub.register(commissionRecordRoutes, { prefix: "/commissions" });
+  });
+
+  // --- GRUPO 3: RELATÓRIOS (Acesso: ADM e COMERCIAL) ---
+  app.register(async (sub) => {
+    sub.addHook("preHandler", roleGuard(["ADMIN", "COMMERCIAL"]));
+    sub.register(reportRoutes, { prefix: "/reports" });
+  });
+
+  // --- GRUPO 4: GESTÃO DE EQUIPE E CONFIG. CLÍNICA (Acesso: APENAS ADM) ---
+  app.register(async (sub) => {
+    sub.addHook("preHandler", roleGuard(["ADMIN"]));
+    sub.register(userRoutes, { prefix: "/users" });
+    sub.register(clinicSettingsRoutes, { prefix: "/clinics" });
+    sub.register(commissionPlanRoutes, { prefix: "/commission-plans" });
+  });
 };
 
 app.register(clinicRoutes);
