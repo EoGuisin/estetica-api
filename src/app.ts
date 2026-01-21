@@ -52,8 +52,13 @@ app.register(multipart, {
 });
 
 app.register(cors, {
-  origin: ["http://localhost:3001", "https://www.belliun.com.br"],
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  origin: [
+    "http://localhost:3001",
+    "https://www.belliun.com.br",
+    "https://belliun.com.br",
+  ],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  credentials: true,
 });
 
 app.get("/", () => {
