@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma";
+import { startOfDay, endOfDay } from "date-fns";
 
 export class DashboardService {
   /**
@@ -36,13 +37,20 @@ export class DashboardService {
     endDate: Date,
     professionalIds?: string[]
   ) {
+    // CORREÇÃO 1: Garantir que a busca cubra do primeiro segundo do dia de início
+    // até o último segundo do dia final, ignorando fusos horários quebrados.
+    const start = startOfDay(startDate);
+    const end = endOfDay(endDate);
+
     const whereClause: any = {
-      professional: {
+      // CORREÇÃO 2: Filtrar pelo clinicId do PACIENTE, que é garantido,
+      // ou garantir que o profissional pertença à clínica (ou seja o dono)
+      patient: {
         clinicId: clinicId,
       },
       date: {
-        gte: startDate,
-        lte: endDate,
+        gte: start,
+        lte: end,
       },
     };
 
@@ -75,33 +83,23 @@ export class DashboardService {
             name: true,
           },
         },
-        // AQUI ESTÃO AS MUDANÇAS CRUCIAIS:
         treatmentPlan: {
           include: {
-            seller: {
-              select: {
-                fullName: true,
-              },
-            },
-            // 1. Precisamos buscar os irmãos (outros agendamentos) para calcular "Sessão X de Y"
+            seller: { select: { fullName: true } },
             appointments: {
               select: {
                 id: true,
                 date: true,
                 status: true,
-                treatmentPlanProcedureId: true, // Necessário para filtrar apenas os deste procedimento
+                treatmentPlanProcedureId: true,
               },
             },
             procedures: {
               select: {
-                id: true, // 2. OBRIGATÓRIO: Precisamos do ID para saber qual item do array é o nosso
+                id: true,
                 contractedSessions: true,
                 completedSessions: true,
-                procedure: {
-                  select: {
-                    name: true,
-                  },
-                },
+                procedure: { select: { name: true } },
               },
             },
           },
