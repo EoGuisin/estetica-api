@@ -11,9 +11,15 @@ export class PatientService {
     const { address, phones, ...patientData } = data;
 
     return prisma.$transaction(async (tx) => {
-      const newAddress = await tx.address.create({
-        data: address,
-      });
+      let addressId = null;
+
+      // Só cria o endereço se os dados existirem
+      if (address && address.zipCode) {
+        const newAddress = await tx.address.create({
+          data: address,
+        });
+        addressId = newAddress.id;
+      }
 
       const newPatient = await tx.patient.create({
         data: {
@@ -23,8 +29,7 @@ export class PatientService {
             ? new Date(patientData.guardianBirthDate)
             : null,
           clinicId,
-          maritalStatus: patientData.maritalStatus,
-          addressId: newAddress.id,
+          addressId: addressId, // Será null se não houver endereço
         },
       });
 
@@ -44,7 +49,7 @@ export class PatientService {
     page: number,
     pageSize: number,
     name?: string,
-    document?: string,
+    document?: string
   ) {
     const where: Prisma.PatientWhereInput = { clinicId };
 
@@ -186,7 +191,7 @@ export class PatientService {
         // Busca as chaves de forma insensível a maiúsculas/minúsculas
         const findKey = (names: string[]) => {
           const key = Object.keys(row).find((k) =>
-            names.includes(k.toLowerCase().trim()),
+            names.includes(k.toLowerCase().trim())
           );
           return key ? row[key] : null;
         };
@@ -205,7 +210,7 @@ export class PatientService {
       .filter((r) => {
         if (!r.name || r.cpf.length !== 11) {
           results.errors.push(
-            `Linha ${r.rowNum}: Nome ausente ou CPF inválido (${r.cpf}).`,
+            `Linha ${r.rowNum}: Nome ausente ou CPF inválido (${r.cpf}).`
           );
           return false;
         }
@@ -224,7 +229,7 @@ export class PatientService {
     for (const data of validRows) {
       if (existingCpfSet.has(data.cpf)) {
         results.errors.push(
-          `Linha ${data.rowNum}: CPF ${data.cpf} já existe nesta clínica.`,
+          `Linha ${data.rowNum}: CPF ${data.cpf} já existe nesta clínica.`
         );
         continue;
       }
@@ -256,7 +261,7 @@ export class PatientService {
         results.success++;
       } catch (error) {
         results.errors.push(
-          `Linha ${data.rowNum}: Erro inesperado ao salvar no banco.`,
+          `Linha ${data.rowNum}: Erro inesperado ao salvar no banco.`
         );
       }
     }

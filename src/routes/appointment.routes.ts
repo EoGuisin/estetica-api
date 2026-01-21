@@ -7,7 +7,6 @@ export async function appointmentRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authMiddleware);
   app.post("/", AppointmentController.create);
   app.get("/patients", AppointmentController.listPatients);
-  app.get("/appointment-types", AppointmentController.listAppointmentTypes);
   app.get("/treatment-plans/patient/:patientId", AppointmentController.listTreatmentPlansByPatient);
   app.patch("/:appointmentId/status", AppointmentController.updateStatus);
 }

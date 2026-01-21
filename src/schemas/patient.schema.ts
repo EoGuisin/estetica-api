@@ -39,8 +39,8 @@ export const createPatientSchema = z.object({
   occupation: z.string().optional().nullable(),
 
   phones: z.array(phoneSchema).min(1, "Pelo menos um telefone é obrigatório."),
-  address: addressSchema,
-
+  address: addressSchema.optional().nullable(),
+  
   trafficSourceId: z
     .string()
     .uuid("Fonte de tráfego inválida.")

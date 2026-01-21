@@ -40,14 +40,6 @@ export class AppointmentController {
     return reply.send(patients);
   }
 
-  static async listAppointmentTypes(
-    request: FastifyRequest,
-    reply: FastifyReply
-  ) {
-    const types = await AppointmentService.listAppointmentTypes();
-    return reply.send(types);
-  }
-
   static async listTreatmentPlansByPatient(
     request: FastifyRequest,
     reply: FastifyReply

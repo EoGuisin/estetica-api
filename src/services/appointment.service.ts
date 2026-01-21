@@ -218,13 +218,6 @@ export class AppointmentService {
     });
   }
 
-  static async listAppointmentTypes() {
-    return prisma.appointmentType.findMany({
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    });
-  }
-
   static async listTreatmentPlansByPatient(
     clinicId: string,
     patientId: string
