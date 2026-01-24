@@ -25,13 +25,11 @@ export class AuthService {
   static async login(data: LoginInput) {
     const { email, password } = data;
 
-    // --- MUDANÇA AQUI ---
-    // Buscamos o usuário e suas *potenciais* relações (de Dono ou de Funcionário)
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
-        clinic: { select: { accountId: true } }, // Se for funcionário, pegamos o accountId da clínica
-        ownedAccount: { select: { id: true } }, // Se for dono, pegamos o ID da conta dele
+        clinic: { select: { accountId: true } },
+        ownedAccount: { select: { id: true } },
       },
     });
 
@@ -50,28 +48,14 @@ export class AuthService {
       throw new Error("Chave secreta JWT não configurada.");
     }
 
-    // --- MUDANÇA AQUI ---
-    // Monta o payload do JWT dinamicamente
-    let payload: UserPayload;
+    // --- LÓGICA PARA DESCOBRIR O ID DA CONTA ---
+    let accountId: string;
 
     if (user.clinicId && user.clinic) {
-      // É um FUNCIONÁRIO
-      payload = {
-        userId: user.id,
-        roleId: user.roleId,
-        clinicId: user.clinicId,
-        accountId: user.clinic.accountId, // O ID da conta "mãe"
-      };
+      accountId = user.clinic.accountId;
     } else if (user.ownedAccount) {
-      // É um DONO
-      payload = {
-        userId: user.id,
-        roleId: null, // Dono não tem "Role" de clínica
-        clinicId: null, // Dono não tem *uma* clínica, tem várias
-        accountId: user.ownedAccount.id, // O ID da conta dele
-      };
+      accountId = user.ownedAccount.id;
     } else {
-      // Caso de erro: usuário órfão (sempre bom ter um fallback)
       console.error(`Usuário ${user.id} não é nem dono nem funcionário.`);
       throw {
         code: "UNAUTHORIZED",
@@ -79,21 +63,30 @@ export class AuthService {
       };
     }
 
+    // Monta payload do token
+    const payload: UserPayload = {
+      userId: user.id,
+      roleId: user.roleId,
+      clinicId: user.clinicId,
+      accountId: accountId,
+    };
+
     const token = jwt.sign(payload, secret, { expiresIn: "7d" });
 
-    // --- MUDANÇA AQUI ---
-    // Removemos o ownedAccount e clinic do objeto de retorno para
-    // manter a resposta limpa, assim como era antes.
-    const { passwordHash, clinic, ownedAccount, ...userWithoutPassword } = user;
+    const { passwordHash, clinic, ownedAccount, ...userBase } = user;
 
-    return { user: userWithoutPassword, token };
+    const userToReturn = {
+      ...userBase,
+      accountId: accountId,
+    };
+
+    return { user: userToReturn, token };
   }
 
   static async register(data: RegisterInput) {
     const { email, taxId, password, fullName, clinicName, isProfessional } =
       data;
 
-    // 1. Verificar se o email ou CNPJ já existem
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       throw { code: "CONFLICT", message: "Este email já está em uso." };
@@ -104,15 +97,9 @@ export class AuthService {
       throw { code: "CONFLICT", message: "Este CNPJ já está cadastrado." };
     }
 
-    // 2. Criptografar a senha
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // --- MUDANÇA AQUI ---
-    // A transação agora cria a nova arquitetura:
-    // User (Dono) -> Account (Empresa) -> Clinic (Primeira Loja)
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Criar o usuário (DONO)
-      // Note que clinicId e roleId são nulos, como manda o novo schema
       const newUser = await tx.user.create({
         data: {
           fullName,
@@ -128,12 +115,10 @@ export class AuthService {
         },
       });
 
-      // 2. Criar a "Conta" (a empresa/dono do plano)
       const newAccount = await tx.account.create({
         data: { ownerId: newUser.id },
       });
 
-      // 3. Criar a *primeira* Clínica
       const newClinic = await tx.clinic.create({
         data: {
           name: clinicName,
@@ -149,7 +134,7 @@ export class AuthService {
           type: "ADMIN",
           description: "Acesso total ao sistema da clínica",
           isSuperAdmin: true,
-          clinicId: newClinic.id, // VINCULADO À CLÍNICA!
+          clinicId: newClinic.id,
         },
       });
 
@@ -163,12 +148,9 @@ export class AuthService {
       return { newUser: updatedUser, newAccount };
     });
 
-    // 4. Gerar um token JWT para auto-login
     const secret = process.env.JWT_SECRET;
     if (!secret) throw new Error("Chave secreta JWT não configurada.");
 
-    // --- MUDANÇA AQUI ---
-    // O payload do token de registro é de um DONO
     const payload: UserPayload = {
       userId: result.newUser.id,
       roleId: null,
@@ -177,9 +159,18 @@ export class AuthService {
     };
     const token = jwt.sign(payload, secret, { expiresIn: "7d" });
 
-    // 5. Retornar os dados
-    const { passwordHash: _, ...userWithoutPassword } = result.newUser;
-    return { user: userWithoutPassword, token };
+    const { passwordHash: _, ...userBase } = result.newUser;
+
+    const userToReturn = {
+      ...userBase,
+      accountId: result.newAccount.id,
+    };
+
+    return {
+      user: userToReturn,
+      account: result.newAccount,
+      token,
+    };
   }
 
   static async forgotPassword(data: ForgotPasswordInput) {

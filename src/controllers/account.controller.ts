@@ -4,17 +4,26 @@ import { AccountService } from "../services/account.service";
 import { createClinicSchema } from "../schemas/account.schema";
 
 export class AccountController {
+  static async getStats(request: FastifyRequest, reply: FastifyReply) {
+    const { accountId } = request.user;
+    const stats = await AccountService.getStats(accountId);
+    return reply.send(stats);
+  }
+
   static async listClinics(request: FastifyRequest, reply: FastifyReply) {
-    // Aqui usamos request.user.accountId, pois não precisamos
-    // do 'clinicAccessMiddleware' para esta rota.
     const { accountId } = request.user;
     const clinics = await AccountService.listClinics(accountId);
     return reply.send(clinics);
   }
 
+  // --- CORREÇÃO AQUI ---
+  // O Controller recebe (request, reply), extrai o ID e chama o Service
   static async getSubscription(request: FastifyRequest, reply: FastifyReply) {
     const { accountId } = request.user;
+
+    // Agora passamos uma string limpa para o service
     const subscription = await AccountService.getSubscription(accountId);
+
     return reply.send(subscription);
   }
 

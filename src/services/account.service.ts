@@ -3,6 +3,27 @@ import { prisma } from "../lib/prisma";
 import { CreateClinicInput } from "../schemas/account.schema";
 
 export class AccountService {
+  static async getStats(accountId: string) {
+    const subscription = await prisma.subscription.findUnique({
+      where: { accountId },
+      select: { currentMaxUsers: true },
+    });
+
+    // Conta quantos usuários estão vinculados a contas/clinicas desse dono
+    const currentUsers = await prisma.user.count({
+      where: {
+        // Filtra usuários que pertencem a clínicas desta conta
+        clinic: { accountId: accountId },
+        // REMOVIDO: status: "ACTIVE" (Pois o campo não existe no model User)
+      },
+    });
+
+    return {
+      maxUsers: subscription?.currentMaxUsers || 0,
+      currentUsers,
+    };
+  }
+
   /**
    * Lista todas as clínicas que pertencem a uma conta.
    */

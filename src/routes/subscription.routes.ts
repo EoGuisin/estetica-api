@@ -116,7 +116,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
 
     const session = await stripe.billingPortal.sessions.create({
       customer: account.stripeCustomerId,
-      return_url: `${process.env.FRONTEND_URL}/admin/settings/billing`,
+      return_url: `${process.env.FRONTEND_URL}/dashboard/settings/account`,
     });
 
     return { url: session.url };

@@ -29,14 +29,16 @@ import { commissionRecordRoutes } from "./routes/commissionRecord.routes";
 import { cashRegisterRoutes } from "./routes/cashRegister.routes";
 import { bankAccountRoutes } from "./routes/bankAccount.routes";
 import { reportRoutes } from "./routes/report.routes";
+import { clinicRoutes as clinicSettingsRoutes } from "./routes/clinic.routes";
+
+// --- MIDDLEWARES E NOVAS ROTAS ---
 import { authMiddleware } from "./middleware/auth.middleware";
 import { clinicAccessMiddleware } from "./middleware/clinic-access.middleware";
+import { roleGuard } from "./middleware/roleGuard";
 import { accountRoutes } from "./routes/account.routes";
 import { publicRoutes } from "./routes/public.routes";
-import { clinicRoutes as clinicSettingsRoutes } from "./routes/clinic.routes";
 import { webhookRoutes } from "./routes/webhook.routes";
 import { subscriptionRoutes } from "./routes/subscription.routes";
-import { roleGuard } from "./middleware/roleGuard";
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -61,6 +63,8 @@ app.register(cors, {
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   credentials: true,
 });
+
+app.register(webhookRoutes);
 
 app.get("/", () => {
   return { message: "API de Estética está funcionando!" };

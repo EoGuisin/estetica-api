@@ -1,4 +1,3 @@
-//src/routes/webhook.routes.ts
 import { FastifyInstance } from "fastify";
 import Stripe from "stripe";
 import { stripe } from "../lib/stripe";
@@ -36,79 +35,129 @@ export async function webhookRoutes(app: FastifyInstance) {
       "invoice.payment_succeeded",
       "customer.subscription.updated",
       "customer.subscription.deleted",
+      "customer.subscription.created",
     ]);
 
     if (relevantEvents.has(event.type)) {
       const session = event.data.object as any;
+
+      // Lógica de IDs
       const subscriptionId = session.subscription || session.id;
+      let customerId = session.customer;
 
-      // CORREÇÃO AQUI: Usamos 'as any' porque sua definição de tipos removeu
-      // current_period_start/end, mas precisamos acessar esses valores se eles existirem no JSON
-      // ou usar fallbacks.
-      const stripeSubscription = (await stripe.subscriptions.retrieve(
-        subscriptionId,
-        {
-          expand: ["items.data.price.product"],
+      if (!customerId && subscriptionId) {
+        try {
+          if (
+            typeof subscriptionId === "string" &&
+            subscriptionId.startsWith("sub_")
+          ) {
+            const sub = await stripe.subscriptions.retrieve(subscriptionId);
+            customerId = sub.customer;
+          }
+        } catch (e) {
+          console.error("Erro ao buscar customer na subscription", e);
         }
-      )) as any;
+      }
 
-      const customerId = stripeSubscription.customer as string;
-
-      const account = await prisma.account.findUnique({
-        where: { stripeCustomerId: customerId },
-      });
-
-      if (!account) {
+      if (!customerId) {
         return reply.status(200).send();
       }
 
-      // --- CÁLCULO DE LIMITES ---
+      const account = await prisma.account.findUnique({
+        where: { stripeCustomerId: customerId as string },
+      });
+
+      if (!account) {
+        console.log(
+          `⚠️ Ignorando evento de teste. Conta não encontrada no banco: ${customerId}`
+        );
+        return reply.status(200).send();
+      }
+
+      // =================================================================
+      // LÓGICA DE SOMA BLINDADA (CORREÇÃO DO ERRO DE EXPANSÃO)
+      // =================================================================
+
+      // 1. Buscamos a lista SEM expandir o produto profundamente (evita o erro 4 levels)
+      const subscriptions = await stripe.subscriptions.list({
+        customer: customerId as string,
+        status: "all",
+      });
+
       let totalUsers = 0;
       let totalStorage = BigInt(0);
-
       let hasCrm = false;
       let hasAi = false;
       let hasApp = false;
       let hasFunnel = false;
       let hasWhats = false;
 
-      let planName = "Customizado";
+      let mainStatus = "canceled";
+      let maxPeriodEnd = 0;
       let planIdDb = "";
 
-      const subStatus = stripeSubscription.status;
+      console.log(
+        `🔄 Recalculando conta ${account.id}. Encontradas ${subscriptions.data.length} assinaturas.`
+      );
 
-      // Tratamento seguro para as datas, caso a API nova não as envie
-      const now = Math.floor(Date.now() / 1000);
+      for (const sub of subscriptions.data) {
+        // Ignora inativas
+        if (
+          sub.status !== "active" &&
+          sub.status !== "trialing" &&
+          sub.status !== "past_due"
+        ) {
+          continue;
+        }
 
-      // Se não tiver start, usa o billing_cycle_anchor ou 'agora'
-      const periodStart =
-        stripeSubscription.current_period_start ||
-        stripeSubscription.billing_cycle_anchor ||
-        now;
+        if (sub.status === "active" || sub.status === "trialing") {
+          mainStatus = sub.status;
+        }
 
-      // Se não tiver end, usa o start + 30 dias (aprox) como fallback
-      const periodEnd =
-        stripeSubscription.current_period_end ||
-        periodStart + 30 * 24 * 60 * 60;
+        // Data
+        const subAny = sub as any;
+        const currentEnd = subAny.trial_end || subAny.current_period_end;
+        if (currentEnd > maxPeriodEnd) {
+          maxPeriodEnd = currentEnd;
+        }
 
-      // Iteração sobre os itens (tipagem mantida como any para evitar conflito com a definição customizada)
-      if (stripeSubscription.items && stripeSubscription.items.data) {
-        for (const item of stripeSubscription.items.data) {
-          const product = item.price.product as any; // any para acessar metadata sem travar
+        // 2. Itera sobre os itens
+        for (const item of sub.items.data) {
+          const productOrId = item.price.product;
           const quantity = item.quantity || 1;
-          const metadata = product.metadata || {};
 
-          // 1. Planos Base
+          let product: Stripe.Product;
+
+          // 3. BUSCA MANUAL DO PRODUTO (AQUI ESTÁ A CORREÇÃO)
+          // Como não expandimos na lista para evitar o erro, buscamos agora pelo ID.
+          try {
+            if (typeof productOrId === "string") {
+              product = await stripe.products.retrieve(productOrId);
+            } else {
+              product = productOrId as Stripe.Product;
+            }
+          } catch (err) {
+            console.error(`Erro ao buscar produto ${productOrId}`, err);
+            continue; // Pula se der erro nesse produto específico
+          }
+
+          const metadata = product.metadata || {};
+          console.log(
+            `   - Item: ${product.name} (Qtd: ${quantity}) - Meta:`,
+            metadata
+          );
+
+          // Planos Base
           if (metadata.plan_type === "ESSENTIAL") {
-            planName = "Essencial";
-            totalUsers += 5;
+            totalUsers += 10;
             totalStorage += BigInt(10) * GB_TO_BYTES;
-            const p = await prisma.subscriptionPlan.findUnique({
-              where: { name: "Essencial Mensal" },
-            });
-            if (p) planIdDb = p.id;
+            if (!planIdDb) {
+              const p = await prisma.subscriptionPlan.findUnique({
+                where: { name: "Essencial Mensal" },
+              });
+              if (p) planIdDb = p.id;
+            }
           } else if (metadata.plan_type === "EXPERTS") {
-            planName = "Experts";
             totalUsers += 20;
             totalStorage += BigInt(10) * GB_TO_BYTES;
             hasCrm = true;
@@ -116,15 +165,18 @@ export async function webhookRoutes(app: FastifyInstance) {
             hasApp = true;
             hasFunnel = true;
             hasWhats = true;
-            const p = await prisma.subscriptionPlan.findUnique({
-              where: { name: "Experts Mensal" },
-            });
-            if (p) planIdDb = p.id;
+            if (!planIdDb) {
+              const p = await prisma.subscriptionPlan.findUnique({
+                where: { name: "Experts Mensal" },
+              });
+              if (p) planIdDb = p.id;
+            }
           }
 
-          // 2. Add-ons
+          // Add-ons
           if (metadata.feature_user) {
-            totalUsers += parseInt(metadata.feature_user) * quantity;
+            const addUsers = parseInt(metadata.feature_user) * quantity;
+            totalUsers += addUsers;
           }
           if (metadata.feature_crm === "true") hasCrm = true;
           if (metadata.feature_whats === "true") hasWhats = true;
@@ -134,32 +186,27 @@ export async function webhookRoutes(app: FastifyInstance) {
         }
       }
 
+      // Fallback
       if (!planIdDb) {
         const defaultPlan = await prisma.subscriptionPlan.findFirst();
         planIdDb = defaultPlan?.id || "";
       }
 
-      const trialEnd = stripeSubscription.trial_end;
-      const currentPeriodEnd = stripeSubscription.current_period_end;
+      const finalPeriodEnd =
+        maxPeriodEnd > 0 ? new Date(maxPeriodEnd * 1000) : new Date();
+      const finalPeriodStart = new Date();
 
-      // LÓGICA CORRIGIDA:
-      // Se tiver trial_end, o acesso vai até lá. Se não, vai até o fim do ciclo pago.
-      const accessUntil = trialEnd
-        ? new Date(trialEnd * 1000)
-        : new Date(currentPeriodEnd * 1000);
+      console.log(`✅ Soma Final -> Usuários: ${totalUsers}`);
 
-      const periodStartData = new Date(periodStart * 1000);
-
-      // ATUALIZA O BANCO
       await prisma.subscription.upsert({
         where: { accountId: account.id },
         create: {
           accountId: account.id,
           planId: planIdDb,
-          stripeSubscriptionId: stripeSubscription.id,
-          status: subStatus,
-          currentPeriodStart: periodStartData,
-          currentPeriodEnd: accessUntil, // <--- AQUI ESTAVA O ERRO, AGORA USA accessUntil
+          stripeSubscriptionId: subscriptionId as string,
+          status: mainStatus,
+          currentPeriodStart: finalPeriodStart,
+          currentPeriodEnd: finalPeriodEnd,
           currentMaxUsers: totalUsers,
           currentMaxStorage: totalStorage,
           activeCrm: hasCrm,
@@ -169,10 +216,9 @@ export async function webhookRoutes(app: FastifyInstance) {
           activeWhats: hasWhats,
         },
         update: {
-          status: subStatus,
+          status: mainStatus,
           planId: planIdDb,
-          currentPeriodStart: periodStartData,
-          currentPeriodEnd: accessUntil, // <--- AQUI TAMBÉM
+          currentPeriodEnd: finalPeriodEnd,
           currentMaxUsers: totalUsers,
           currentMaxStorage: totalStorage,
           activeCrm: hasCrm,
@@ -182,10 +228,6 @@ export async function webhookRoutes(app: FastifyInstance) {
           activeWhats: hasWhats,
         },
       });
-
-      console.log(
-        `Webhook: Assinatura processada para conta ${account.id}. Users: ${totalUsers}`
-      );
     }
 
     return reply.send({ received: true });
