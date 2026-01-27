@@ -59,6 +59,8 @@ app.register(cors, {
     "http://localhost:3001",
     "https://www.belliun.com.br",
     "https://belliun.com.br",
+    "https://app.belliun.com.br",
+    "https://www.app.belliun.com.br",
   ],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   credentials: true,
