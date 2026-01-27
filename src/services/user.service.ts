@@ -138,6 +138,7 @@ export class UserService {
         specialties: true,
         CommissionPlan: true,
         ProfessionalCouncil: true,
+        role: true,
       },
     });
 

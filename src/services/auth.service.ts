@@ -28,7 +28,10 @@ export class AuthService {
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
-        clinic: { select: { accountId: true } },
+        role: true,
+        clinic: {
+          select: { accountId: true, id: true, name: true, status: true },
+        },
         ownedAccount: { select: { id: true } },
       },
     });
