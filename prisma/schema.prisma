@@ -493,6 +493,12 @@ model Procedure {
   @@map("procedures")
 }
 
+enum TreatmentPlanStatus {
+  DRAFT // Orçamento/Simulação
+  APPROVED // Venda Efetivada
+  CANCELED // Cancelado
+}
+
 model TreatmentPlan {
   id                 String   @id @default(uuid())
   patientId          String
@@ -503,7 +509,9 @@ model TreatmentPlan {
   discountPercentage Decimal? @db.Decimal(5, 2)
   surcharge          Decimal? @db.Decimal(10, 2)
   total              Decimal  @db.Decimal(10, 2)
+  installmentCount   Int?     @default(1)
 
+  status              TreatmentPlanStatus      @default(APPROVED) // Default APPROVED para manter compatibilidade
   patient             Patient                  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   clinic              Clinic                   @relation(fields: [clinicId], references: [id])
   seller              User                     @relation(fields: [sellerId], references: [id])

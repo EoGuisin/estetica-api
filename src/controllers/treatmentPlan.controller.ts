@@ -15,7 +15,7 @@ export class TreatmentPlanController {
     const plans = await TreatmentPlanService.list(clinicId);
     return reply.send(plans);
   }
-  
+
   static async getById(request: FastifyRequest, reply: FastifyReply) {
     const { clinicId } = request;
     const { id } = request.params as { id: string };
@@ -24,5 +24,28 @@ export class TreatmentPlanController {
       return reply.status(404).send({ message: "Plano não encontrado." });
     }
     return reply.send(plan);
+  }
+
+  static async approve(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request;
+    const { id } = request.params as { id: string };
+
+    await TreatmentPlanService.approve(id, clinicId);
+    return reply.send({
+      message: "Orçamento aprovado e financeiro gerado com sucesso!",
+    });
+  }
+
+  static async delete(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request;
+    const { id } = request.params as { id: string };
+
+    try {
+      await TreatmentPlanService.delete(id, clinicId);
+      return reply.send({ message: "Plano excluído com sucesso." });
+    } catch (error: any) {
+      // Retorna 400 para erros de regra de negócio (segurança)
+      return reply.status(400).send({ message: error.message });
+    }
   }
 }

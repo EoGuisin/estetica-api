@@ -1,118 +1,201 @@
 // src/services/treatmentPlan.service.ts
-import { CommissionTriggerEvent, PaymentStatus } from "@prisma/client";
+import {
+  CommissionTriggerEvent,
+  PaymentStatus,
+  TreatmentPlanStatus,
+} from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { CreateTreatmentPlanInput } from "../schemas/treatmentPlan.schema";
 import { CommissionRecordService } from "./commissionRecord.service";
 
 export class TreatmentPlanService {
-  /**
-   * Cria um novo Plano de Tratamento e suas parcelas associadas.
-   */
-  static async create(clinicId: string, data: CreateTreatmentPlanInput) {
-    // <-- Usa o tipo importado
-    // Separa os dados do plano, procedimentos e termos de pagamento
-    const { procedures, paymentTerms, ...planData } = data;
+  // --- MÉTODO PRIVADO: GERA FINANCEIRO E COMISSÃO ---
+  // Reutilizável para Criação Direta e Aprovação
+  private static async generateFinancials(
+    tx: any,
+    planId: string,
+    clinicId: string,
+    totalAmount: number,
+    numberOfInstallments: number,
+    firstDueDate?: Date
+  ) {
+    const installmentAmount = Number.parseFloat(
+      (Number(totalAmount) / numberOfInstallments).toFixed(2)
+    );
+    const lastInstallmentAmount =
+      Number(totalAmount) - installmentAmount * (numberOfInstallments - 1);
 
-    if (!procedures || procedures.length === 0) {
-      throw new Error("Pelo menos um procedimento é necessário.");
+    const installmentsData = [];
+    let currentDueDate = firstDueDate ? new Date(firstDueDate) : new Date();
+
+    // Se não veio data e estamos gerando agora, joga pra 30 dias (ou mantém hoje se for entrada)
+    // Ajuste conforme sua regra de negócio. Aqui vou assumir que se não tem data, é D+30
+    if (!firstDueDate) {
+      currentDueDate.setDate(currentDueDate.getDate() + 30);
     }
-    if (!paymentTerms || paymentTerms.numberOfInstallments < 1) {
-      throw new Error("Termos de pagamento inválidos.");
+
+    for (let i = 1; i <= numberOfInstallments; i++) {
+      installmentsData.push({
+        treatmentPlanId: planId,
+        clinicId: clinicId,
+        installmentNumber: i,
+        dueDate: new Date(currentDueDate),
+        amountDue:
+          i === numberOfInstallments
+            ? lastInstallmentAmount
+            : installmentAmount,
+        status: PaymentStatus.PENDING,
+      });
+      currentDueDate.setMonth(currentDueDate.getMonth() + 1);
     }
+
+    await tx.paymentInstallment.createMany({ data: installmentsData });
+
+    // Comissão
+    const plan = await tx.treatmentPlan.findUnique({
+      where: { id: planId },
+      select: { sellerId: true, seller: { include: { CommissionPlan: true } } },
+    });
+
+    if (
+      plan?.seller?.CommissionPlan?.triggerEvent ===
+      CommissionTriggerEvent.ON_SALE
+    ) {
+      await CommissionRecordService.calculateAndRecordCommissionForPlan(
+        tx,
+        planId
+      );
+    }
+  }
+
+  static async create(
+    clinicId: string,
+    data: CreateTreatmentPlanInput & { isBudget?: boolean }
+  ) {
+    const { procedures, paymentTerms, isBudget, ...planData } = data;
 
     return prisma.$transaction(async (tx) => {
-      // 1. Cria o Plano de Tratamento
+      // 1. Cria o Plano (DRAFT ou APPROVED)
       const newPlan = await tx.treatmentPlan.create({
         data: {
           ...planData,
           clinicId,
+          status: isBudget
+            ? TreatmentPlanStatus.DRAFT
+            : TreatmentPlanStatus.APPROVED,
+          installmentCount: paymentTerms.numberOfInstallments, // Salva para usar depois se for draft
           procedures: {
             create: procedures.map((proc) => ({
               procedureId: proc.procedureId,
-              contractedSessions: proc.contractedSessions, // Já são números pelo Zod coerce
-              unitPrice: proc.unitPrice, // Já é número pelo Zod coerce
+              contractedSessions: proc.contractedSessions,
+              unitPrice: proc.unitPrice,
               followUps: proc.followUps,
             })),
           },
         },
       });
 
-      // --- LÓGICA COMPLETA DE CRIAÇÃO DE PARCELAS ---
-      const totalAmount = newPlan.total;
-      const numberOfInstallments = paymentTerms.numberOfInstallments;
-      const installmentAmount = Number.parseFloat(
-        (Number(totalAmount) / numberOfInstallments).toFixed(2)
+      // 2. Se NÃO for orçamento, gera o financeiro agora
+      if (!isBudget) {
+        await this.generateFinancials(
+          tx,
+          newPlan.id,
+          clinicId,
+          Number(newPlan.total),
+          paymentTerms.numberOfInstallments,
+          paymentTerms.firstDueDate
+            ? new Date(paymentTerms.firstDueDate)
+            : undefined
+        );
+      }
+
+      return newPlan;
+    });
+  }
+
+  // --- NOVO: APROVAR ORÇAMENTO ---
+  static async approve(id: string, clinicId: string) {
+    const plan = await prisma.treatmentPlan.findUnique({
+      where: { id, clinicId },
+      include: { paymentInstallments: true },
+    });
+
+    if (!plan) throw new Error("Plano não encontrado.");
+    if (plan.status !== TreatmentPlanStatus.DRAFT)
+      throw new Error("Este plano já foi aprovado ou cancelado.");
+
+    return prisma.$transaction(async (tx) => {
+      // Gera o financeiro baseado no que foi salvo no draft
+      await this.generateFinancials(
+        tx,
+        plan.id,
+        clinicId,
+        Number(plan.total),
+        plan.installmentCount || 1, // Fallback se estiver nulo
+        new Date() // Data da primeira parcela = Hoje (ou lógica de D+30) ao aprovar
       );
 
-      // Calcula o valor da última parcela para ajustar arredondamentos
-      const lastInstallmentAmount =
-        Number(totalAmount) - installmentAmount * (numberOfInstallments - 1);
+      return tx.treatmentPlan.update({
+        where: { id },
+        data: { status: TreatmentPlanStatus.APPROVED },
+      });
+    });
+  }
 
-      const installmentsData = [];
-      let currentDueDate = paymentTerms.firstDueDate
-        ? new Date(paymentTerms.firstDueDate)
-        : new Date();
-      if (!paymentTerms.firstDueDate) {
-        currentDueDate.setDate(currentDueDate.getDate() + 30); // Padrão D+30 se não informado
-      }
+  // --- NOVO: DELETAR COM SEGURANÇA ---
+  static async delete(id: string, clinicId: string) {
+    const plan = await prisma.treatmentPlan.findUnique({
+      where: { id, clinicId },
+      include: {
+        paymentInstallments: true,
+        commissionRecords: true,
+        appointments: true, // Para verificar se já atendeu
+      },
+    });
 
-      for (let i = 1; i <= numberOfInstallments; i++) {
-        installmentsData.push({
-          treatmentPlanId: newPlan.id,
-          clinicId: clinicId,
-          installmentNumber: i,
-          dueDate: new Date(currentDueDate), // Cria uma nova instância da data
-          amountDue:
-            i === numberOfInstallments
-              ? lastInstallmentAmount
-              : installmentAmount, // Usa valor ajustado na última
-          status: PaymentStatus.PENDING,
-        });
+    if (!plan) throw new Error("Plano não encontrado.");
 
-        // Adiciona 1 mês para a próxima parcela (cuidado com virada de ano/mês)
-        currentDueDate.setMonth(currentDueDate.getMonth() + 1);
-      }
+    // VERIFICAÇÃO DE SEGURANÇA
+    const hasPaidInstallment = plan.paymentInstallments.some(
+      (p) => p.status === PaymentStatus.PAID
+    );
+    const hasPaidCommission = plan.commissionRecords.some(
+      (c) => c.status === "PAID"
+    ); // Ajuste conforme seu Enum de comissão
+    const hasCompletedAppointment = plan.appointments.some(
+      (a) => a.status === "COMPLETED" || a.status === "CONFIRMED"
+    );
 
-      // Cria todas as parcelas de uma vez
-      await tx.paymentInstallment.createMany({
-        data: installmentsData,
+    if (hasPaidInstallment || hasPaidCommission) {
+      throw new Error(
+        "SEGURANÇA: Não é possível excluir uma venda com movimentações financeiras (parcelas pagas ou comissões pagas). Realize o estorno ou cancelamento."
+      );
+    }
+
+    if (hasCompletedAppointment) {
+      throw new Error(
+        "SEGURANÇA: Existem agendamentos concluídos vinculados a este plano. Desvincule os agendamentos antes de excluir."
+      );
+    }
+
+    // Se passou, deleta tudo (Cascade do Prisma deve cuidar das relações, mas garantimos aqui)
+    return prisma.$transaction(async (tx) => {
+      // Opcional: deletar explicitamente para garantir ordem, mas se o schema tiver onDelete: Cascade, basta deletar o plano
+      await tx.commissionRecord.deleteMany({ where: { treatmentPlanId: id } });
+      await tx.paymentInstallment.deleteMany({
+        where: { treatmentPlanId: id },
+      });
+      await tx.treatmentPlanProcedure.deleteMany({
+        where: { treatmentPlanId: id },
       });
 
-      const sellerWithPlan = await tx.user.findUnique({
-        where: { id: newPlan.sellerId },
-        include: { CommissionPlan: true },
+      // Desvincula agendamentos futuros (não deleta o agendamento, só tira o plano)
+      await tx.appointment.updateMany({
+        where: { treatmentPlanId: id },
+        data: { treatmentPlanId: null, treatmentPlanProcedureId: null },
       });
 
-      if (
-        sellerWithPlan?.CommissionPlan?.triggerEvent ===
-        CommissionTriggerEvent.ON_SALE
-      ) {
-        console.log(`Disparando comissão ON_SALE para plano ${newPlan.id}`);
-        try {
-          await CommissionRecordService.calculateAndRecordCommissionForPlan(
-            tx,
-            newPlan.id
-          );
-        } catch (commissionError: any) {
-          console.error(
-            `Erro ao calcular/registrar comissão ON_SALE para plano ${newPlan.id}:`,
-            commissionError.message
-          );
-          // Decida se o erro na comissão deve falhar a criação do plano
-          // throw commissionError;
-        }
-      }
-
-      // Retorna o plano completo com as parcelas
-      return tx.treatmentPlan.findUnique({
-        where: { id: newPlan.id },
-        include: {
-          procedures: { include: { procedure: true } },
-          patient: true,
-          seller: true,
-          paymentInstallments: { orderBy: { installmentNumber: "asc" } }, // Ordena as parcelas
-        },
-      });
+      await tx.treatmentPlan.delete({ where: { id } });
     });
   }
 
@@ -123,14 +206,8 @@ export class TreatmentPlanService {
       include: {
         patient: { select: { name: true } },
         seller: { select: { fullName: true } },
-        _count: {
-          select: {
-            procedures: true,
-            paymentInstallments: true, // Total de parcelas
-          },
-        },
+        _count: { select: { procedures: true, paymentInstallments: true } },
         paymentInstallments: {
-          // Para calcular quantas foram pagas
           where: { status: PaymentStatus.PAID },
           select: { id: true },
         },

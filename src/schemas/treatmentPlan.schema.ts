@@ -34,6 +34,7 @@ export const createTreatmentPlanSchema = z.object({
     .array(procedureItemSchema)
     .min(1, "Adicione pelo menos um procedimento."),
   paymentTerms: paymentTermsSchema,
+  isBudget: z.boolean().optional().default(false),
 });
 
 export type CreateTreatmentPlanInput = z.infer<
