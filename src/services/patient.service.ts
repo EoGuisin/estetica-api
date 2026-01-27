@@ -134,13 +134,33 @@ export class PatientService {
     });
 
     return prisma.$transaction(async (tx) => {
-      if (address && existingPatient.addressId) {
-        await tx.address.update({
-          where: { id: existingPatient.addressId },
-          data: address,
-        });
+      let finalAddressId = existingPatient.addressId;
+
+      // Lógica Corrigida de Endereço
+      if (address) {
+        if (existingPatient.addressId) {
+          // Caso 1: Paciente já tem endereço -> Atualiza
+          await tx.address.update({
+            where: { id: existingPatient.addressId },
+            data: address,
+          });
+        } else {
+          // Caso 2: Paciente NÃO tem endereço -> Cria e pega o ID
+          // (Adicionei verificação básica se tem pelo menos um dado relevante)
+          const hasAddressData = Object.values(address).some(
+            (val) => val && val.toString().trim() !== ""
+          );
+
+          if (hasAddressData) {
+            const newAddress = await tx.address.create({
+              data: address as any, // Cast necessário dependendo da tipagem exata do Zod x Prisma
+            });
+            finalAddressId = newAddress.id;
+          }
+        }
       }
 
+      // Atualiza telefones
       if (phones) {
         await tx.phone.deleteMany({ where: { patientId: id } });
         await tx.phone.createMany({
@@ -148,10 +168,12 @@ export class PatientService {
         });
       }
 
+      // Atualiza Paciente e vincula o novo endereço se foi criado agora
       const updatedPatient = await tx.patient.update({
         where: { id },
         data: {
           ...patientData,
+          addressId: finalAddressId,
           birthDate: patientData.birthDate
             ? new Date(patientData.birthDate)
             : undefined,

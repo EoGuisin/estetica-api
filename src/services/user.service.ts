@@ -43,6 +43,14 @@ export class UserService {
     const { specialtyIds, password, signatureImagePath, ...userData } = data;
     const passwordHash = await bcrypt.hash(password, 10);
 
+    const emailExists = await prisma.user.findUnique({
+      where: { email: userData.email },
+    });
+
+    if (emailExists) {
+      throw new Error("Este e-mail já está em uso por outro usuário.");
+    }
+
     return prisma.user.create({
       data: {
         ...userData,
