@@ -98,6 +98,8 @@ const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
     sub.register(attendanceRoutes, { prefix: "/attendance" });
     sub.register(medicalReportRoutes, { prefix: "/medical-reports" });
     sub.register(prescriptionRoutes, { prefix: "/prescriptions" });
+    sub.register(userRoutes, { prefix: "/users" });
+    sub.register(anamnesisRoutes, { prefix: "/anamnesis" });
   });
 
   // --- GRUPO 2: FINANCEIRO, ESTOQUE E CADASTROS (Acesso: ADM, COMERCIAL, SECRETÁRIA) ---
@@ -109,7 +111,6 @@ const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
     sub.register(catalogRoutes, { prefix: "/catalogs" });
     sub.register(specialtyRoutes, { prefix: "/specialties" });
     sub.register(treatmentPlanRoutes, { prefix: "/treatment-plans" });
-    sub.register(anamnesisRoutes, { prefix: "/anamnesis" });
     sub.register(specialtyTemplateRoutes, { prefix: "/specialty-templates" });
     sub.register(professionalCouncilRoutes, {
       prefix: "/professional-councils",
@@ -140,7 +141,6 @@ const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
   // --- GRUPO 4: GESTÃO DE EQUIPE E CONFIG. CLÍNICA (Acesso: APENAS ADM) ---
   app.register(async (sub) => {
     sub.addHook("preHandler", roleGuard(["ADMIN"]));
-    sub.register(userRoutes, { prefix: "/users" });
     sub.register(clinicSettingsRoutes, { prefix: "/clinics" });
     sub.register(commissionPlanRoutes, { prefix: "/commission-plans" });
   });
