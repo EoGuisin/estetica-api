@@ -85,11 +85,19 @@ export class ExpenseController {
       const expense = await ExpenseService.markAsPaid(id, clinicId, data);
       return reply.send(expense);
     } catch (error: any) {
+      // 1. Trata erro de "Não encontrado" do Prisma
       if (error.code === "P2025") {
         return reply.status(404).send({
           message: "Despesa não encontrada ou inválida para pagamento.",
         });
       }
+
+      if (error instanceof Error && error.message.includes("CAIXA FECHADO")) {
+        return reply.status(400).send({
+          message: error.message,
+        });
+      }
+
       throw error;
     }
   }
