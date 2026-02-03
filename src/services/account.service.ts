@@ -12,7 +12,7 @@ export class AccountService {
     // Conta quantos usuários estão vinculados a contas/clinicas desse dono
     const currentUsers = await prisma.user.count({
       where: {
-        // CORREÇÃO: Filtra usuários que possuem ALGUMA clínica vinculada a esta conta
+        // CORREÇÃO: Usar 'some' para filtrar na relação N:N
         clinics: {
           some: {
             accountId: accountId,

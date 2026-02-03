@@ -28,7 +28,7 @@ export class AuthService {
       where: { email },
       include: {
         role: true,
-        // CORREÇÃO: Mudou de 'clinic' para 'clinics' (Array)
+        // CORREÇÃO 1: Mudamos de 'clinic' para 'clinics' (Array)
         clinics: {
           select: { accountId: true, id: true, name: true, status: true },
         },
@@ -51,26 +51,24 @@ export class AuthService {
       throw new Error("Chave secreta JWT não configurada.");
     }
 
-    // --- LÓGICA PARA DESCOBRIR O ID DA CONTA ---
+    // --- CORREÇÃO 2: Lógica para descobrir a Conta ---
     let accountId: string;
 
-    // 1. É dono?
     if (user.ownedAccount) {
+      // Se é dono, usa a conta dele
       accountId = user.ownedAccount.id;
-    }
-    // 2. Tem vínculo com clínicas? Pega o accountId da primeira
-    else if (user.clinics && user.clinics.length > 0) {
+    } else if (user.clinics && user.clinics.length > 0) {
+      // Se é funcionário, pega a conta da primeira clínica vinculada
       accountId = user.clinics[0].accountId;
     } else {
-      console.error(`Usuário ${user.id} não é nem dono nem funcionário.`);
+      // Caso raro: Usuário existe mas não tem conta nem clínica (erro de dados)
       throw {
         code: "UNAUTHORIZED",
-        message: "Configuração de usuário inválida (sem conta vinculada).",
+        message: "Usuário sem vínculo com nenhuma conta.",
       };
     }
 
-    // Define um clinicId "padrão" para o token (opcional, pode ser null se for forçar escolha)
-    // Se o usuário tiver clínicas, pegamos a primeira como default
+    // Define um clinicId "padrão" para o token
     const defaultClinicId =
       user.clinics && user.clinics.length > 0 ? user.clinics[0].id : null;
 
@@ -83,14 +81,13 @@ export class AuthService {
 
     const token = jwt.sign(payload, secret, { expiresIn: "7d" });
 
-    // Remove dados sensíveis e redundantes antes de retornar
+    // Remove dados sensíveis
     const { passwordHash, clinics, ownedAccount, ...userBase } = user;
 
     const userToReturn = {
       ...userBase,
       accountId: accountId,
-      // Retorna as clínicas para o front saber quais ele pode acessar
-      clinics: clinics,
+      clinics: clinics, // Retorna o array para o front montar o seletor
     };
 
     return { user: userToReturn, token };
@@ -113,7 +110,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Cria usuário (sem clínica ainda)
+      // 1. Cria usuário
       const newUser = await tx.user.create({
         data: {
           fullName,
@@ -134,7 +131,7 @@ export class AuthService {
         data: { ownerId: newUser.id },
       });
 
-      // 3. Cria clínica
+      // 3. Cria clínica vinculada à conta
       const newClinic = await tx.clinic.create({
         data: {
           name: clinicName,
@@ -155,12 +152,12 @@ export class AuthService {
         },
       });
 
-      // 5. Atualiza usuário: define o papel E VINCULA À CLÍNICA CRIADA
+      // 5. Atualiza usuário: define papel E VINCULA À CLÍNICA (N:N)
       const updatedUser = await tx.user.update({
         where: { id: newUser.id },
         data: {
           roleId: adminRole.id,
-          // CORREÇÃO CRÍTICA: Vincula o usuário à clínica criada na tabela N:N
+          // CORREÇÃO 3: Connect usando a nova sintaxe N:N
           clinics: {
             connect: { id: newClinic.id },
           },
@@ -176,7 +173,7 @@ export class AuthService {
     const payload: UserPayload = {
       userId: result.newUser.id,
       roleId: result.newUser.roleId,
-      clinicId: result.newClinic.id, // O registro cria vínculo direto, podemos por no token
+      clinicId: result.newClinic.id,
       accountId: result.newAccount.id,
     };
     const token = jwt.sign(payload, secret, { expiresIn: "7d" });
