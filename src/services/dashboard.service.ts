@@ -112,12 +112,9 @@ export class DashboardService {
       },
     };
 
-    // --- LÓGICA DE FILTRO DE PROFISSIONAIS ---
     if (isRestricted) {
-      // Se é restrito, IGNORA o filtro do frontend e força ver só os seus
       whereClause.professionalId = requestingUserId;
     } else {
-      // Se não é restrito (Dono/Admin), respeita o filtro do frontend (se houver)
       if (professionalIds && professionalIds.length > 0) {
         whereClause.professionalId = {
           in: professionalIds,
@@ -139,6 +136,7 @@ export class DashboardService {
         },
         professional: {
           select: {
+            id: true, // <--- ADICIONADO: Importante trazer o ID aqui também
             fullName: true,
             color: true,
           },

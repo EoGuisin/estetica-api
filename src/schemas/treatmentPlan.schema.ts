@@ -13,15 +13,15 @@ const paymentTermsSchema = z.object({
     .number()
     .int()
     .min(1, "Deve haver pelo menos 1 parcela.")
-    .max(12, "Máximo de 12 parcelas."), // Limite de 12
+    .max(12, "Máximo de 12 parcelas."),
   firstDueDate: z
     .string()
-    .refine(
-      (d) => !Number.isNaN(Date.parse(d)),
-      "Data da primeira parcela inválida."
-    )
     .optional()
-    .nullable(),
+    .nullable()
+    .refine((d) => {
+      if (!d) return true;
+      return !Number.isNaN(Date.parse(d));
+    }, "Data da primeira parcela inválida."),
 });
 
 export const createTreatmentPlanSchema = z.object({

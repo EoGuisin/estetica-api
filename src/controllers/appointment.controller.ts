@@ -7,6 +7,24 @@ import {
 import { AppointmentService } from "../services/appointment.service";
 
 export class AppointmentController {
+  static async update(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request;
+    const { appointmentId } = request.params as { appointmentId: string };
+
+    const data = request.body as any;
+
+    try {
+      const appointment = await AppointmentService.update(
+        clinicId,
+        appointmentId,
+        data
+      );
+      return reply.send(appointment);
+    } catch (error: any) {
+      return reply.status(400).send({ message: error.message });
+    }
+  }
+
   static async create(request: FastifyRequest, reply: FastifyReply) {
     const { clinicId } = request;
     const data = createAppointmentSchema.parse(request.body);

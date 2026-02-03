@@ -151,15 +151,15 @@ app.register(clinicRoutes);
 app.setErrorHandler((error, request, reply) => {
   if (error.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
     return reply.status(413).send({
-      message: "Erro de validação",
-      issues: {
-        _errors: ["A imagem enviada é muito grande. O limite é de 5MB."],
-      },
+      message: "A imagem enviada é muito grande. O limite é de 5MB.",
     });
   }
   if (error instanceof ZodError) {
+    const firstIssue = error.issues[0];
+    const message = firstIssue ? firstIssue.message : "Erro de validação";
+
     return reply.status(400).send({
-      message: "Erro de validação",
+      message,
       issues: error.format(),
     });
   }

@@ -232,4 +232,124 @@ export class AppointmentService {
       orderBy: { createdAt: "desc" },
     });
   }
+
+  static async update(
+    clinicId: string,
+    appointmentId: string,
+    data: Partial<CreateAppointmentInput>
+  ) {
+    const existing = await prisma.appointment.findUniqueOrThrow({
+      where: { id: appointmentId },
+      include: { professional: true }, // Incluir dados do profissional atual
+    });
+
+    // 1. Bloqueio de segurança (Status imutáveis)
+    if (
+      ["CANCELED", "COMPLETED", "CONFIRMED", "WAITING"].includes(
+        existing.status
+      )
+    ) {
+      throw new SchedulingError(
+        `Não é possível editar agendamentos com status: ${existing.status}`
+      );
+    }
+
+    // 2. Determinar quais dados usar (Novos ou existentes)
+    const targetProfessionalId = data.professionalId || existing.professionalId;
+    const targetDate = data.date ? new Date(data.date) : existing.date;
+
+    // Pequeno ajuste para garantir a leitura correta do dia da semana (timezone fix)
+    const dateForCheck = new Date(
+      targetDate.toISOString().split("T")[0] + "T12:00:00"
+    );
+
+    const targetStartTime = data.startTime || existing.startTime;
+    const targetEndTime = data.endTime || existing.endTime;
+
+    // Se mudou o profissional OU a data/hora, precisamos revalidar a agenda
+    const isRescheduling =
+      targetProfessionalId !== existing.professionalId ||
+      data.date ||
+      data.startTime ||
+      data.endTime;
+
+    if (isRescheduling) {
+      // A. Buscar dados do Profissional Alvo (pode ser o novo ou o mesmo)
+      const professional = await prisma.user.findUniqueOrThrow({
+        where: { id: targetProfessionalId },
+        select: {
+          fullName: true,
+          workingDays: true,
+          scheduleStartHour: true,
+          scheduleEndHour: true,
+        },
+      });
+
+      // B. Validação de Dia de Funcionamento
+      const dayOfWeekNumber = getDay(dateForCheck);
+      const dayOfWeekString = DAY_MAP[dayOfWeekNumber];
+
+      if (!professional.workingDays.includes(dayOfWeekString)) {
+        // ... lógica de tradução dos dias ...
+        const diasTraduzidos: Record<string, string> = {
+          SUNDAY: "Domingo",
+          MONDAY: "Segunda",
+          TUESDAY: "Terça",
+          WEDNESDAY: "Quarta",
+          THURSDAY: "Quinta",
+          FRIDAY: "Sexta",
+          SATURDAY: "Sábado",
+        };
+        throw new SchedulingError(
+          `O profissional ${professional.fullName} não atende neste dia (${
+            diasTraduzidos[dayOfWeekString] || dayOfWeekString
+          }).`
+        );
+      }
+
+      // C. Validação de Horário de Expediente
+      if (professional.scheduleStartHour && professional.scheduleEndHour) {
+        if (
+          targetStartTime < professional.scheduleStartHour ||
+          targetEndTime > professional.scheduleEndHour
+        ) {
+          throw new SchedulingError(
+            `Horário fora do expediente de ${professional.fullName} (${professional.scheduleStartHour} - ${professional.scheduleEndHour}).`
+          );
+        }
+      }
+
+      // D. Validação de Conflito (Overlap)
+      const hasConflict = await prisma.appointment.findFirst({
+        where: {
+          professionalId: targetProfessionalId, // Checa na agenda do profissional ALVO
+          date: targetDate,
+          id: { not: appointmentId }, // Ignora o próprio agendamento sendo editado
+          status: { not: "CANCELED" },
+          AND: [
+            { startTime: { lt: targetEndTime } },
+            { endTime: { gt: targetStartTime } },
+          ],
+        },
+      });
+
+      if (hasConflict) {
+        throw new SchedulingError(
+          `Conflito de horário na agenda de ${professional.fullName}.`
+        );
+      }
+    }
+
+    // Atualiza
+    return prisma.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        professionalId: targetProfessionalId, // Atualiza o ID do profissional
+        date: data.date ? new Date(data.date) : undefined,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        notes: data.notes,
+      },
+    });
+  }
 }

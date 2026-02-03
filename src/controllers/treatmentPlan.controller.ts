@@ -36,6 +36,20 @@ export class TreatmentPlanController {
     });
   }
 
+  static async update(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request;
+    const { id } = request.params as { id: string };
+
+    const data = createTreatmentPlanSchema.parse(request.body);
+
+    try {
+      const updatedPlan = await TreatmentPlanService.update(id, clinicId, data);
+      return reply.send(updatedPlan);
+    } catch (error: any) {
+      return reply.status(400).send({ message: error.message });
+    }
+  }
+
   static async delete(request: FastifyRequest, reply: FastifyReply) {
     const { clinicId } = request;
     const { id } = request.params as { id: string };

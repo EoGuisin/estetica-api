@@ -9,5 +9,6 @@ export async function treatmentPlanRoutes(app: FastifyInstance) {
   app.get("/", TreatmentPlanController.list);
   app.get("/:id", TreatmentPlanController.getById);
   app.patch("/:id/approve", TreatmentPlanController.approve);
+  app.put("/:id", TreatmentPlanController.update);
   app.delete("/:id", TreatmentPlanController.delete);
 }

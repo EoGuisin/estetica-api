@@ -142,6 +142,70 @@ export class TreatmentPlanService {
     });
   }
 
+  static async update(
+    id: string,
+    clinicId: string,
+    data: CreateTreatmentPlanInput
+  ) {
+    const { procedures, paymentTerms, isBudget, ...planData } = data;
+
+    // 1. Verificar se o plano existe e se ainda é um rascunho (DRAFT)
+    const existingPlan = await prisma.treatmentPlan.findUnique({
+      where: { id, clinicId },
+    });
+
+    if (!existingPlan) throw new Error("Plano de tratamento não encontrado.");
+
+    if (existingPlan.status !== TreatmentPlanStatus.DRAFT) {
+      throw new Error(
+        "Não é permitido editar uma venda já finalizada. Cancele a venda ou crie uma nova."
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      // 2. Remover procedimentos antigos
+      await tx.treatmentPlanProcedure.deleteMany({
+        where: { treatmentPlanId: id },
+      });
+
+      // 3. Atualizar os dados básicos do Plano e reinserir procedimentos
+      const updatedPlan = await tx.treatmentPlan.update({
+        where: { id },
+        data: {
+          ...planData,
+          installmentCount: paymentTerms.numberOfInstallments,
+          status: isBudget
+            ? TreatmentPlanStatus.DRAFT
+            : TreatmentPlanStatus.APPROVED,
+          procedures: {
+            create: procedures.map((proc) => ({
+              procedureId: proc.procedureId,
+              contractedSessions: proc.contractedSessions,
+              unitPrice: proc.unitPrice,
+              followUps: proc.followUps,
+            })),
+          },
+        },
+      });
+
+      // 4. Se o usuário resolveu FINALIZAR a venda durante a edição (isBudget = false)
+      if (!isBudget) {
+        await this.generateFinancials(
+          tx,
+          updatedPlan.id,
+          clinicId,
+          Number(updatedPlan.total),
+          paymentTerms.numberOfInstallments,
+          paymentTerms.firstDueDate
+            ? new Date(paymentTerms.firstDueDate)
+            : undefined
+        );
+      }
+
+      return updatedPlan;
+    });
+  }
+
   // --- NOVO: DELETAR COM SEGURANÇA ---
   static async delete(id: string, clinicId: string) {
     const plan = await prisma.treatmentPlan.findUnique({
