@@ -1,3 +1,4 @@
+// src/services/auth.service.ts
 import { prisma } from "../lib/prisma";
 import {
   ForgotPasswordInput,
@@ -12,13 +13,11 @@ import crypto from "crypto";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// --- NOVA INTERFACE (para o payload do JWT) ---
-// Note que roleId e clinicId podem ser nulos
 interface UserPayload {
   userId: string;
   roleId: string | null;
   clinicId: string | null;
-  accountId: string; // Todos agora pertencem a uma conta
+  accountId: string;
 }
 
 export class AuthService {
@@ -29,7 +28,8 @@ export class AuthService {
       where: { email },
       include: {
         role: true,
-        clinic: {
+        // CORREÇÃO: Mudou de 'clinic' para 'clinics' (Array)
+        clinics: {
           select: { accountId: true, id: true, name: true, status: true },
         },
         ownedAccount: { select: { id: true } },
@@ -54,33 +54,43 @@ export class AuthService {
     // --- LÓGICA PARA DESCOBRIR O ID DA CONTA ---
     let accountId: string;
 
-    if (user.clinicId && user.clinic) {
-      accountId = user.clinic.accountId;
-    } else if (user.ownedAccount) {
+    // 1. É dono?
+    if (user.ownedAccount) {
       accountId = user.ownedAccount.id;
+    }
+    // 2. Tem vínculo com clínicas? Pega o accountId da primeira
+    else if (user.clinics && user.clinics.length > 0) {
+      accountId = user.clinics[0].accountId;
     } else {
       console.error(`Usuário ${user.id} não é nem dono nem funcionário.`);
       throw {
         code: "UNAUTHORIZED",
-        message: "Configuração de usuário inválida.",
+        message: "Configuração de usuário inválida (sem conta vinculada).",
       };
     }
 
-    // Monta payload do token
+    // Define um clinicId "padrão" para o token (opcional, pode ser null se for forçar escolha)
+    // Se o usuário tiver clínicas, pegamos a primeira como default
+    const defaultClinicId =
+      user.clinics && user.clinics.length > 0 ? user.clinics[0].id : null;
+
     const payload: UserPayload = {
       userId: user.id,
       roleId: user.roleId,
-      clinicId: user.clinicId,
+      clinicId: defaultClinicId,
       accountId: accountId,
     };
 
     const token = jwt.sign(payload, secret, { expiresIn: "7d" });
 
-    const { passwordHash, clinic, ownedAccount, ...userBase } = user;
+    // Remove dados sensíveis e redundantes antes de retornar
+    const { passwordHash, clinics, ownedAccount, ...userBase } = user;
 
     const userToReturn = {
       ...userBase,
       accountId: accountId,
+      // Retorna as clínicas para o front saber quais ele pode acessar
+      clinics: clinics,
     };
 
     return { user: userToReturn, token };
@@ -103,6 +113,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await prisma.$transaction(async (tx) => {
+      // 1. Cria usuário (sem clínica ainda)
       const newUser = await tx.user.create({
         data: {
           fullName,
@@ -118,10 +129,12 @@ export class AuthService {
         },
       });
 
+      // 2. Cria conta
       const newAccount = await tx.account.create({
         data: { ownerId: newUser.id },
       });
 
+      // 3. Cria clínica
       const newClinic = await tx.clinic.create({
         data: {
           name: clinicName,
@@ -131,6 +144,7 @@ export class AuthService {
         },
       });
 
+      // 4. Cria papel de Admin
       const adminRole = await tx.role.create({
         data: {
           name: "Administrador",
@@ -141,14 +155,19 @@ export class AuthService {
         },
       });
 
+      // 5. Atualiza usuário: define o papel E VINCULA À CLÍNICA CRIADA
       const updatedUser = await tx.user.update({
         where: { id: newUser.id },
         data: {
           roleId: adminRole.id,
+          // CORREÇÃO CRÍTICA: Vincula o usuário à clínica criada na tabela N:N
+          clinics: {
+            connect: { id: newClinic.id },
+          },
         },
       });
 
-      return { newUser: updatedUser, newAccount };
+      return { newUser: updatedUser, newAccount, newClinic };
     });
 
     const secret = process.env.JWT_SECRET;
@@ -156,8 +175,8 @@ export class AuthService {
 
     const payload: UserPayload = {
       userId: result.newUser.id,
-      roleId: null,
-      clinicId: null,
+      roleId: result.newUser.roleId,
+      clinicId: result.newClinic.id, // O registro cria vínculo direto, podemos por no token
       accountId: result.newAccount.id,
     };
     const token = jwt.sign(payload, secret, { expiresIn: "7d" });
@@ -182,7 +201,7 @@ export class AuthService {
 
     if (user) {
       const token = crypto.randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + 3600000); // Expira em 1 hora
+      const expiresAt = new Date(Date.now() + 3600000); // 1 hora
 
       await prisma.passwordResetToken.create({
         data: {
@@ -194,13 +213,11 @@ export class AuthService {
 
       const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
 
-      // --- MUDANÇA AQUI: Removido "onboarding@resend.dev" ---
-      // Usando o domínio de produção verificado
       await resend.emails.send({
         from: "Belliun <nao-responda@belliun.com.br>",
         to: user.email,
         subject: "Redefinição de Senha - Belliun",
-        html: `<p>Olá ${user.fullName},</p><p>Você solicitou a redefinição de sua senha. Clique no link abaixo para criar uma nova senha:</p><a href="${resetLink}">Redefinir Senha</a><p>Se você não solicitou isso, por favor, ignore este email.</p>`,
+        html: `<p>Olá ${user.fullName},</p><p>Clique no link para redefinir sua senha:</p><a href="${resetLink}">Redefinir Senha</a>`,
       });
     }
     return {
@@ -212,7 +229,6 @@ export class AuthService {
   static async resetPassword(data: ResetPasswordInput) {
     const { token, password } = data;
 
-    // 1. Encontrar o token no banco
     const savedToken = await prisma.passwordResetToken.findUnique({
       where: { token },
     });
@@ -221,7 +237,6 @@ export class AuthService {
       throw { code: "NOT_FOUND", message: "Token inválido ou expirado." };
     }
 
-    // 2. Verificar se o token expirou
     if (new Date() > savedToken.expiresAt) {
       await prisma.passwordResetToken.delete({ where: { id: savedToken.id } });
       throw {
@@ -230,10 +245,8 @@ export class AuthService {
       };
     }
 
-    // 3. Criptografar a nova senha
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // 4. Atualizar a senha do usuário e deletar o token em uma transação
     await prisma.$transaction([
       prisma.user.update({
         where: { id: savedToken.userId },

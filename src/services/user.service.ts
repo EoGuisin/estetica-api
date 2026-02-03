@@ -1,4 +1,3 @@
-//src/services/user.service.ts
 import { prisma } from "../lib/prisma";
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -9,9 +8,9 @@ import { MultipartFile } from "@fastify/multipart";
 const SIGNATURES_BUCKET = "signatures";
 
 export class UserService {
-  static async create(clinicId: string, data: any) {
+  static async create(currentClinicId: string, data: any) {
     const clinic = await prisma.clinic.findUniqueOrThrow({
-      where: { id: clinicId },
+      where: { id: currentClinicId },
       select: {
         account: {
           select: {
@@ -29,8 +28,13 @@ export class UserService {
       throw new Error("Sua assinatura não está ativa. Verifique o pagamento.");
     }
 
+    // --- CORREÇÃO 1: Contagem baseada na relação N:N ---
     const currentUsers = await prisma.user.count({
-      where: { clinicId: clinicId },
+      where: {
+        clinics: {
+          some: { id: currentClinicId }, // Usa 'currentClinicId' que veio no parametro
+        },
+      },
     });
 
     if (currentUsers >= sub.currentMaxUsers) {
@@ -39,8 +43,13 @@ export class UserService {
       );
     }
 
-    // Extrai signatureImagePath junto com os outros dados
-    const { specialtyIds, password, signatureImagePath, ...userData } = data;
+    const {
+      specialtyIds,
+      password,
+      signatureImagePath,
+      clinicIds, // Certifique-se que o frontend manda isso
+      ...userData
+    } = data;
     const passwordHash = await bcrypt.hash(password, 10);
 
     const emailExists = await prisma.user.findUnique({
@@ -55,8 +64,10 @@ export class UserService {
       data: {
         ...userData,
         passwordHash,
-        clinicId,
-        // Salva o caminho da assinatura
+        clinics: {
+          // Conecta as clínicas selecionadas + a clínica atual (opcional, mas recomendado para garantir acesso onde foi criado)
+          connect: clinicIds.map((id: string) => ({ id })),
+        },
         signatureImagePath: signatureImagePath || null,
         specialties: {
           connect: specialtyIds?.map((id: string) => ({ id })) || [],
@@ -72,7 +83,6 @@ export class UserService {
     name?: string,
     document?: string
   ) {
-    // 1. Primeiro, descobrimos quem é o Dono da Conta dessa Clínica
     const clinic = await prisma.clinic.findUnique({
       where: { id: clinicId },
       select: { account: { select: { ownerId: true } } },
@@ -81,14 +91,9 @@ export class UserService {
     const ownerId = clinic?.account?.ownerId;
 
     const where: Prisma.UserWhereInput = {
-      AND: [
-        {
-          OR: [
-            { clinicId: clinicId },
-            ...(ownerId ? [{ id: ownerId, isProfessional: true }] : []),
-          ],
-        },
-      ],
+      clinics: {
+        some: { id: clinicId },
+      },
     };
 
     if (name) {
@@ -139,6 +144,7 @@ export class UserService {
         CommissionPlan: true,
         ProfessionalCouncil: true,
         role: true,
+        clinics: { select: { id: true, name: true } },
       },
     });
 
@@ -154,8 +160,8 @@ export class UserService {
   }
 
   static async update(id: string, data: any) {
-    // Extrai signatureImagePath aqui também
-    const { specialtyIds, signatureImagePath, ...userData } = data;
+    // --- CORREÇÃO 2: Extrair clinicIds do payload ---
+    const { specialtyIds, signatureImagePath, clinicIds, ...userData } = data;
     await prisma.user.findFirstOrThrow({ where: { id } });
 
     if (userData.commissionPlanId === "") userData.commissionPlanId = null;
@@ -166,23 +172,32 @@ export class UserService {
       where: { id },
       data: {
         ...userData,
-        // Atualiza a assinatura se ela vier no payload
         signatureImagePath: signatureImagePath,
+        // Atualiza as relações N:N
+        clinics:
+          clinicIds === undefined
+            ? undefined
+            : {
+                set: clinicIds.map((cid: string) => ({ id: cid })), // Substitui todas as clínicas pelas novas
+              },
         specialties:
           specialtyIds === undefined
             ? undefined
             : {
-                set: specialtyIds?.map((id: string) => ({ id })) || [],
+                set: specialtyIds?.map((sid: string) => ({ id: sid })) || [],
               },
       },
     });
   }
 
   static async delete(id: string, clinicId: string) {
+    // --- CORREÇÃO 3: Verificar existência usando a relação ---
     await prisma.user.findFirstOrThrow({
       where: {
         id,
-        clinicId,
+        clinics: {
+          some: { id: clinicId },
+        },
       },
     });
 
@@ -192,10 +207,8 @@ export class UserService {
   static async uploadSignature(file: MultipartFile, clinicId: string) {
     const fileExtension = file.filename.split(".").pop();
     const fileName = `${randomUUID()}.${fileExtension}`;
-    // Organiza por clínica para não virar bagunça
     const filePath = `${clinicId}/professionals/${fileName}`;
 
-    // Converte o stream para buffer para enviar ao Supabase
     const buffer = await file.toBuffer();
 
     const { data, error } = await supabase.storage
@@ -210,6 +223,6 @@ export class UserService {
       throw new Error("Falha ao salvar assinatura no storage.");
     }
 
-    return data.path; // Retorna o caminho para o frontend salvar no formulário
+    return data.path;
   }
 }

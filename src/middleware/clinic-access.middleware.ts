@@ -1,39 +1,42 @@
-// src/middleware/clinic-access.middleware.ts
-import { FastifyRequest, FastifyReply } from "fastify"; // Removi o HookHandlerDoneFunction
+import { FastifyRequest, FastifyReply } from "fastify";
 import { prisma } from "../lib/prisma";
 
-// Estende a interface do FastifyRequest para adicionar o clinicId EFETIVO
+// 1. CORREÇÃO: Ajustamos a interface para bater com o AuthMiddleware (userId)
+interface DecodedUser {
+  userId: string; // ERA 'id', MUDAMOS PARA 'userId'
+  accountId: string;
+  clinicId?: string | null;
+}
+
 declare module "fastify" {
   interface FastifyRequest {
     clinicId: string;
   }
 }
 
-/**
- * Este middleware DEVE ser executado DEPOIS do 'authMiddleware'.
- * Ele usa ASYNC/AWAIT, portanto não deve receber o parâmetro 'done'.
- */
 export async function clinicAccessMiddleware(
   request: FastifyRequest,
   reply: FastifyReply
-  // REMOVIDO: done
 ) {
-  const user = request.user; // Injetado pelo authMiddleware
+  // Cast para a interface corrigida
+  const user = request.user as unknown as DecodedUser;
 
-  if (user.clinicId) {
-    // --- Caminho 1: É um FUNCIONÁRIO ---
-    request.clinicId = user.clinicId;
-    return; // Apenas retorna (resolve a Promise automaticamente)
+  // 2. CORREÇÃO: Validamos 'userId' em vez de 'id'
+  if (!user || !user.userId) {
+    return reply
+      .status(401)
+      .send({ message: "Usuário não autenticado (ID inválido)." });
   }
 
-  // --- Caminho 2: É um DONO ---
-  const clinicHeader = request.headers["x-clinic-id"] as string | undefined;
+  if (user.clinicId) {
+    request.clinicId = user.clinicId;
+    return;
+  }
+
+  const clinicHeader = request.headers["x-clinic-id"] as string;
 
   if (!clinicHeader) {
-    return reply.status(400).send({
-      message:
-        "Proprietários devem fornecer o header 'X-Clinic-Id' para especificar a clínica.",
-    });
+    return reply.status(400).send({ message: "Clínica não selecionada." });
   }
 
   if (
@@ -48,7 +51,11 @@ export async function clinicAccessMiddleware(
     const clinic = await prisma.clinic.findFirst({
       where: {
         id: clinicHeader,
-        accountId: user.accountId,
+        OR: [
+          // 3. CORREÇÃO: Usamos 'user.userId' nas queries do Prisma
+          { account: { ownerId: user.userId } },
+          { users: { some: { id: user.userId } } },
+        ],
       },
       select: { id: true },
     });
@@ -59,12 +66,10 @@ export async function clinicAccessMiddleware(
         .send({ message: "Acesso negado a esta clínica." });
     }
 
-    // Sucesso! Injeta o clinicId na requisição
     request.clinicId = clinic.id;
-    return; // Sucesso
+    return;
   } catch (error) {
-    return reply
-      .status(500)
-      .send({ message: "Erro ao verificar acesso à clínica." });
+    console.error("Erro no middleware de acesso:", error);
+    return reply.status(500).send({ message: "Erro ao verificar acesso." });
   }
 }

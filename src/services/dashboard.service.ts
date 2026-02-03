@@ -16,8 +16,13 @@ export class DashboardService {
 
     return prisma.user.findMany({
       where: {
-        OR: [{ clinicId: clinicId }, ...(ownerId ? [{ id: ownerId }] : [])],
         isProfessional: true,
+        OR: [
+          // CORREÇÃO: Busca usuários que tenham essa clínica na lista
+          { clinics: { some: { id: clinicId } } },
+          // Inclui o dono se ele for profissional
+          ...(ownerId ? [{ id: ownerId }] : []),
+        ],
       },
       select: {
         id: true,

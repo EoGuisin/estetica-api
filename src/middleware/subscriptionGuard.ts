@@ -1,4 +1,4 @@
-//src/middleware/subscriptionGuard.ts
+// src/middleware/subscriptionGuard.ts
 import { prisma } from "../lib/prisma";
 
 export class SubscriptionGuard {
@@ -20,7 +20,7 @@ export class SubscriptionGuard {
             subscription: {
               select: {
                 status: true,
-                [feature]: true, // Seleciona dinamicamente a coluna (activeAi, activeCrm, etc)
+                [feature]: true, // Seleção dinâmica
               },
             },
           },
@@ -36,7 +36,9 @@ export class SubscriptionGuard {
       );
     }
 
-    const hasAccess = sub[feature];
+    // O TS pode reclamar de indexação dinâmica em tipos inferidos,
+    // então forçamos a leitura como boolean
+    const hasAccess = (sub as any)[feature];
 
     if (!hasAccess) {
       throw new Error(

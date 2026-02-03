@@ -6,6 +6,9 @@ export const createUserSchema = z.object({
   password: z.string().min(8, "A senha deve ter no mínimo 8 caracteres."),
   roleId: z.string().uuid("O papel é obrigatório."),
   isProfessional: z.boolean(),
+  clinicIds: z
+    .array(z.string().uuid())
+    .min(1, "Selecione pelo menos uma clínica."),
   cpf: z.string().length(11, "CPF deve ter 11 dígitos.").optional().nullable(),
   phone: z.string().min(10, "Telefone inválido.").optional().nullable(),
   color: z

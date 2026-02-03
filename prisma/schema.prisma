@@ -121,17 +121,18 @@ model Clinic {
   accountId   String
   storageUsed BigInt       @default(0)
 
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  // --- CORREÇÃO AQUI: APENAS A RELAÇÃO N:N ---
+  users User[] @relation("UserClinics")
+  // REMOVA: userId e a relação antiga user
 
-  address            Address?            @relation(fields: [addressId], references: [id])
-  patients           Patient[]
-  users              User[]
-  treatmentPlans     TreatmentPlan[]
-  anamnesisTemplates AnamnesisTemplate[]
-  patientAssessments PatientAssessment[]
+  account Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  address Address? @relation(fields: [addressId], references: [id])
 
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
+  // Outras relações existentes...
+  patients             Patient[]
+  treatmentPlans       TreatmentPlan[]
+  anamnesisTemplates   AnamnesisTemplate[]
+  patientAssessments   PatientAssessment[]
   CommissionPlan       CommissionPlan[]
   ProductCategory      ProductCategory[]
   ProductBrand         ProductBrand[]
@@ -152,6 +153,9 @@ model Clinic {
   procedures           Procedure[]
   specialtyTemplates   SpecialtyTemplate[]
 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@map("clinics")
 }
 
@@ -168,45 +172,54 @@ model PasswordResetToken {
 }
 
 model User {
-  id                          String               @id @default(uuid())
-  isProfessional              Boolean              @default(false)
-  fullName                    String
-  cpf                         String?              @unique
-  email                       String               @unique
-  phone                       String?
-  passwordHash                String
-  electronicSignature         String?
-  scheduleStartHour           String? // e.g., "08:00"
-  scheduleEndHour             String? // e.g., "18:00"
-  appointmentDuration         Int? // In minutes
-  notes                       String?
-  color                       String?              @default("#ffffff")
-  clinicId                    String?
-  roleId                      String?
-  commissionPlanId            String?
+  id                  String  @id @default(uuid())
+  isProfessional      Boolean @default(false)
+  fullName            String
+  cpf                 String? @unique
+  email               String  @unique
+  phone               String?
+  passwordHash        String
+  electronicSignature String?
+  scheduleStartHour   String?
+  scheduleEndHour     String?
+  appointmentDuration Int?
+  notes               String?
+  color               String? @default("#ffffff")
+
+  // Relações
+  roleId String?
+  role   Role?   @relation(fields: [roleId], references: [id])
+
+  commissionPlanId String?
+  CommissionPlan   CommissionPlan? @relation(fields: [commissionPlanId], references: [id])
+
+  professionalCouncilId String?
+  ProfessionalCouncil   ProfessionalCouncil? @relation(fields: [professionalCouncilId], references: [id])
+
   professionalCouncilRegistry String?
   signatureImagePath          String?
-  workingDays                 String[]             @default([])
-  passwordResetTokens         PasswordResetToken[]
+  workingDays                 String[] @default([])
 
-  clinic                Clinic?               @relation(fields: [clinicId], references: [id])
-  role                  Role?                 @relation(fields: [roleId], references: [id])
-  ownedAccount          Account?              @relation("AccountOwner")
-  specialties           Specialty[]           @relation("ProfessionalSpecialties")
-  appointments          Appointment[]
-  sales                 TreatmentPlan[]
-  assessments           PatientAssessment[]
-  medicalReports        MedicalReport[]
-  prescriptions         Prescription[]
-  CommissionPlan        CommissionPlan?       @relation(fields: [commissionPlanId], references: [id])
-  openedCashSessions    CashRegisterSession[] @relation("OpenedByUser")
-  closedCashSessions    CashRegisterSession[] @relation("ClosedByUser")
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
-  ProfessionalCouncil   ProfessionalCouncil?  @relation(fields: [professionalCouncilId], references: [id])
-  professionalCouncilId String?
-  commissions           CommissionRecord[]
-  patientDocuments      PatientDocument[]
+  // --- CORREÇÃO AQUI: APENAS A RELAÇÃO N:N ---
+  clinics Clinic[] @relation("UserClinics")
+  // REMOVA: clinicId e a relação antiga clinic
+
+  // Outras relações existentes...
+  ownedAccount        Account?              @relation("AccountOwner")
+  specialties         Specialty[]           @relation("ProfessionalSpecialties")
+  appointments        Appointment[]
+  sales               TreatmentPlan[]
+  assessments         PatientAssessment[]
+  medicalReports      MedicalReport[]
+  prescriptions       Prescription[]
+  openedCashSessions  CashRegisterSession[] @relation("OpenedByUser")
+  closedCashSessions  CashRegisterSession[] @relation("ClosedByUser")
+  commissions         CommissionRecord[]
+  patientDocuments    PatientDocument[]
+  passwordResetTokens PasswordResetToken[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("users")
 }

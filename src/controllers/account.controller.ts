@@ -3,6 +3,11 @@ import { FastifyRequest, FastifyReply } from "fastify";
 import { AccountService } from "../services/account.service";
 import { createClinicSchema } from "../schemas/account.schema";
 
+interface DecodedUser {
+  id: string;
+  accountId: string;
+}
+
 export class AccountController {
   static async getStats(request: FastifyRequest, reply: FastifyReply) {
     const { accountId } = request.user;
@@ -45,5 +50,16 @@ export class AccountController {
       }
       throw error;
     }
+  }
+
+  static async listMyClinics(request: FastifyRequest, reply: FastifyReply) {
+    // Faz o cast para garantir que temos o ID
+    const user = request.user as unknown as DecodedUser;
+
+    const clinics = await AccountService.listUserClinics(
+      user.id,
+      user.accountId
+    );
+    return reply.send(clinics);
   }
 }

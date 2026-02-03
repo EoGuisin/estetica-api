@@ -12,9 +12,12 @@ export class AccountService {
     // Conta quantos usuários estão vinculados a contas/clinicas desse dono
     const currentUsers = await prisma.user.count({
       where: {
-        // Filtra usuários que pertencem a clínicas desta conta
-        clinic: { accountId: accountId },
-        // REMOVIDO: status: "ACTIVE" (Pois o campo não existe no model User)
+        // CORREÇÃO: Filtra usuários que possuem ALGUMA clínica vinculada a esta conta
+        clinics: {
+          some: {
+            accountId: accountId,
+          },
+        },
       },
     });
 
@@ -101,6 +104,25 @@ export class AccountService {
         accountId: accountId,
         status: "ACTIVE", // Ou PENDING_PAYMENT, dependendo da sua regra
       },
+    });
+  }
+
+  static async listUserClinics(userId: string, accountId: string) {
+    return prisma.clinic.findMany({
+      where: {
+        // A clínica pertence à conta E (o usuário é dono OU está na lista de users)
+        accountId: accountId,
+        OR: [
+          { account: { ownerId: userId } }, // É o dono da conta
+          { users: { some: { id: userId } } }, // É funcionário vinculado
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+      },
+      orderBy: { name: "asc" },
     });
   }
 }

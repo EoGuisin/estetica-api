@@ -11,4 +11,5 @@ export async function accountRoutes(app: FastifyInstance) {
   app.get("/subscription", AccountController.getSubscription);
 
   app.get("/stats", AccountController.getStats);
+  app.get("/my-clinics", AccountController.listMyClinics);
 }
