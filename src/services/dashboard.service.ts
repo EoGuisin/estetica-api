@@ -21,12 +21,6 @@ export class DashboardService {
 
     if (!user || !clinic) return true; // Por segurança, bloqueia se não achar
 
-    // DEBUG: Verifique isso no terminal do backend se ainda der erro
-    console.log(`[DashboardAuth] User: ${user.fullName}`);
-    console.log(`[DashboardAuth] Role: ${user.role?.type}`);
-    console.log(`[DashboardAuth] Clinic Owner: ${clinic.account.ownerId}`);
-    console.log(`[DashboardAuth] My ID: ${userId}`);
-
     // CHECK 1: É o Dono da Conta dessa clínica?
     if (clinic.account.ownerId === userId) {
       return false; // LIBERADO (Vê tudo)
