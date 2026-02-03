@@ -183,6 +183,15 @@ export class AuthService {
     const userToReturn = {
       ...userBase,
       accountId: result.newAccount.id,
+      ownedAccount: { id: result.newAccount.id },
+      clinics: [
+        {
+          id: result.newClinic.id,
+          name: result.newClinic.name,
+          status: result.newClinic.status,
+          accountId: result.newAccount.id,
+        },
+      ],
     };
 
     return {

@@ -1,18 +1,30 @@
-// src/controllers/dashboard.controller.ts
 import { FastifyRequest, FastifyReply } from "fastify";
 import { DashboardService } from "../services/dashboard.service";
 
+// Interface para garantir a tipagem do user
+interface DecodedUser {
+  userId: string;
+  accountId: string;
+}
+
 export class DashboardController {
   static async getProfessionals(request: FastifyRequest, reply: FastifyReply) {
-    // Agora 'request.user' existe e está tipado graças ao middleware
     const { clinicId } = request;
-    const professionals = await DashboardService.getProfessionals(clinicId);
+    const user = request.user as unknown as DecodedUser;
+
+    // Passamos o ID do usuário que está chamando a rota
+    const professionals = await DashboardService.getProfessionals(
+      clinicId,
+      user.userId
+    );
+
     return reply.send(professionals);
   }
 
   static async getAppointments(request: FastifyRequest, reply: FastifyReply) {
-    // O mesmo aqui, 'clinicId' é obtido de forma segura
     const { clinicId } = request;
+    const user = request.user as unknown as DecodedUser;
+
     const { start, end, professionals } = request.query as {
       start: string;
       end: string;
@@ -25,14 +37,17 @@ export class DashboardController {
         .send({ message: "As datas de início e fim são obrigatórias." });
     }
 
-    const professionalIds = professionals?.split(",").filter(id => id); // Garante que não haja strings vazias
+    const professionalIds = professionals?.split(",").filter((id) => id);
 
+    // Passamos o ID do usuário logado para filtrar agendamentos se necessário
     const appointments = await DashboardService.getAppointments(
       clinicId,
+      user.userId, // <--- NOVO
       new Date(start),
       new Date(end),
       professionalIds
     );
+
     return reply.send(appointments);
   }
 }

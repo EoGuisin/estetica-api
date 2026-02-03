@@ -1,29 +1,83 @@
+// src/services/dashboard.service.ts
 import { prisma } from "../lib/prisma";
 import { startOfDay, endOfDay } from "date-fns";
 
 export class DashboardService {
   /**
-   * Busca os profissionais de uma clínica específica.
+   * Helper para verificar se o usuário tem visão restrita.
    */
-  static async getProfessionals(clinicId: string) {
-    // 1. Descobrir quem é o dono dessa clínica
+  private static async checkRestriction(userId: string, clinicId: string) {
+    // 1. Busca dados da Clínica (para saber quem é o dono da conta dela)
     const clinic = await prisma.clinic.findUnique({
       where: { id: clinicId },
       select: { account: { select: { ownerId: true } } },
     });
 
+    // 2. Busca dados do Usuário (para saber o cargo)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { role: true },
+    });
+
+    if (!user || !clinic) return true; // Por segurança, bloqueia se não achar
+
+    // DEBUG: Verifique isso no terminal do backend se ainda der erro
+    console.log(`[DashboardAuth] User: ${user.fullName}`);
+    console.log(`[DashboardAuth] Role: ${user.role?.type}`);
+    console.log(`[DashboardAuth] Clinic Owner: ${clinic.account.ownerId}`);
+    console.log(`[DashboardAuth] My ID: ${userId}`);
+
+    // CHECK 1: É o Dono da Conta dessa clínica?
+    if (clinic.account.ownerId === userId) {
+      return false; // LIBERADO (Vê tudo)
+    }
+
+    // CHECK 2: É Admin, Comercial ou Secretária?
+    const unrestrictedRoles = ["ADMIN", "COMMERCIAL", "SECRETARY"];
+    if (user.role && unrestrictedRoles.includes(user.role.type)) {
+      return false; // LIBERADO (Vê tudo)
+    }
+
+    // Se chegou aqui, é um profissional comum (não dono, não admin)
+    return true; // RESTRITO (Vê só a si mesmo)
+  }
+
+  /**
+   * Busca os profissionais de uma clínica específica.
+   */
+  static async getProfessionals(clinicId: string, requestingUserId: string) {
+    // Verifica se deve restringir a lista
+    const isRestricted = await this.checkRestriction(
+      requestingUserId,
+      clinicId
+    );
+
+    // Descobrir o ownerId para garantir que ele apareça na lista se for profissional
+    const clinic = await prisma.clinic.findUnique({
+      where: { id: clinicId },
+      select: { account: { select: { ownerId: true } } },
+    });
     const ownerId = clinic?.account.ownerId;
 
+    const whereClause: any = {
+      isProfessional: true,
+      OR: [
+        // Profissionais vinculados a esta clínica (Tabela N:N)
+        { clinics: { some: { id: clinicId } } },
+        // OU o dono da conta (se ele for marcado como isProfessional)
+        ...(ownerId ? [{ id: ownerId }] : []),
+      ],
+    };
+
+    // --- APLICA A RESTRIÇÃO ---
+    if (isRestricted) {
+      // Se for restrito, forçamos o ID dele.
+      // Isso fará a lista retornar apenas 1 item (ele mesmo).
+      whereClause.id = requestingUserId;
+    }
+
     return prisma.user.findMany({
-      where: {
-        isProfessional: true,
-        OR: [
-          // CORREÇÃO: Busca usuários que tenham essa clínica na lista
-          { clinics: { some: { id: clinicId } } },
-          // Inclui o dono se ele for profissional
-          ...(ownerId ? [{ id: ownerId }] : []),
-        ],
-      },
+      where: whereClause,
       select: {
         id: true,
         fullName: true,
@@ -37,22 +91,24 @@ export class DashboardService {
   }
 
   /**
-   * Busca os agendamentos de uma clínica dentro de um período.
+   * Busca os agendamentos.
    */
   static async getAppointments(
     clinicId: string,
+    requestingUserId: string,
     startDate: Date,
     endDate: Date,
     professionalIds?: string[]
   ) {
-    // CORREÇÃO 1: Garantir que a busca cubra do primeiro segundo do dia de início
-    // até o último segundo do dia final, ignorando fusos horários quebrados.
+    const isRestricted = await this.checkRestriction(
+      requestingUserId,
+      clinicId
+    );
+
     const start = startOfDay(startDate);
     const end = endOfDay(endDate);
 
     const whereClause: any = {
-      // CORREÇÃO 2: Filtrar pelo clinicId do PACIENTE, que é garantido,
-      // ou garantir que o profissional pertença à clínica (ou seja o dono)
       patient: {
         clinicId: clinicId,
       },
@@ -62,10 +118,17 @@ export class DashboardService {
       },
     };
 
-    if (professionalIds && professionalIds.length > 0) {
-      whereClause.professionalId = {
-        in: professionalIds,
-      };
+    // --- LÓGICA DE FILTRO DE PROFISSIONAIS ---
+    if (isRestricted) {
+      // Se é restrito, IGNORA o filtro do frontend e força ver só os seus
+      whereClause.professionalId = requestingUserId;
+    } else {
+      // Se não é restrito (Dono/Admin), respeita o filtro do frontend (se houver)
+      if (professionalIds && professionalIds.length > 0) {
+        whereClause.professionalId = {
+          in: professionalIds,
+        };
+      }
     }
 
     return prisma.appointment.findMany({

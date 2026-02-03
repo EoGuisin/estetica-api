@@ -4,8 +4,9 @@ import { AccountService } from "../services/account.service";
 import { createClinicSchema } from "../schemas/account.schema";
 
 interface DecodedUser {
-  id: string;
+  userId: string;
   accountId: string;
+  clinicId?: string;
 }
 
 export class AccountController {
@@ -53,11 +54,11 @@ export class AccountController {
   }
 
   static async listMyClinics(request: FastifyRequest, reply: FastifyReply) {
-    // Faz o cast para garantir que temos o ID
     const user = request.user as unknown as DecodedUser;
 
+    // CORREÇÃO: Passamos user.userId
     const clinics = await AccountService.listUserClinics(
-      user.id,
+      user.userId,
       user.accountId
     );
     return reply.send(clinics);
