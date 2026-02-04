@@ -1,6 +1,6 @@
 import { prisma } from "../lib/prisma";
 import { CreateAppointmentInput } from "../schemas/appointment.schema";
-import { format, getDay } from "date-fns"; // Importei getDay
+import { format, getDay, startOfDay, endOfDay, addHours } from "date-fns"; // Adicionei imports do date-fns
 import { ptBR } from "date-fns/locale";
 
 // Custom Error classes
@@ -13,7 +13,6 @@ class SessionLimitError extends Error {
   }
 }
 
-// Novo erro para conflitos de agenda
 class SchedulingError extends Error {
   constructor(message: string) {
     super(message);
@@ -21,7 +20,6 @@ class SchedulingError extends Error {
   }
 }
 
-// Mapa para converter o número do dia (0-6) para a string do banco
 const DAY_MAP: Record<number, string> = {
   0: "SUNDAY",
   1: "MONDAY",
@@ -73,9 +71,16 @@ export class AppointmentService {
   }
 
   static async create(clinicId: string, data: CreateAppointmentInput) {
-    // ---------------------------------------------------------
-    // 1. BUSCAR DADOS DO PROFISSIONAL E AGENDA
-    // ---------------------------------------------------------
+    // 0. BUSCAR CONFIGURAÇÃO DA CLÍNICA
+    const clinic = await prisma.clinic.findUniqueOrThrow({
+      where: { id: clinicId },
+      select: {
+        allowParallelAppointments: true,
+        parallelAppointmentsLimit: true,
+      },
+    });
+
+    // 1. DADOS DO PROFISSIONAL
     const professional = await prisma.user.findUniqueOrThrow({
       where: { id: data.professionalId },
       select: {
@@ -86,19 +91,20 @@ export class AppointmentService {
       },
     });
 
-    const appointmentDate = new Date(data.date);
-    // Ajuste de fuso horário simples para garantir que pegamos o dia certo
-    // Adiciona 12h para evitar problemas de meia-noite caindo no dia anterior devido a timezone
+    // --- CORREÇÃO DE DATA ---
+    // Garante que a data salva seja sempre "limpa" (meia-noite UTC ou local consistente)
+    // Se data.date vier "2026-02-04", forçamos o ISO para garantir consistência
+    const appointmentDate = new Date(data.date + "T00:00:00.000Z");
+
+    // Para verificação de dia da semana, usamos um horário seguro (meio-dia) para evitar pular o dia por fuso
     const dateForCheck = new Date(data.date + "T12:00:00");
 
-    // ---------------------------------------------------------
     // 2. VALIDAÇÃO DE DIA DE FUNCIONAMENTO
-    // ---------------------------------------------------------
-    const dayOfWeekNumber = getDay(dateForCheck); // 0 = Domingo, 1 = Segunda...
+    const dayOfWeekNumber = getDay(dateForCheck);
     const dayOfWeekString = DAY_MAP[dayOfWeekNumber];
 
     if (!professional.workingDays.includes(dayOfWeekString)) {
-      const diasTraduzidos = {
+      const diasTraduzidos: any = {
         SUNDAY: "Domingo",
         MONDAY: "Segunda",
         TUESDAY: "Terça",
@@ -109,19 +115,12 @@ export class AppointmentService {
       };
 
       throw new SchedulingError(
-        `O profissional ${
-          professional.fullName
-        } não atende neste dia da semana (${
-          diasTraduzidos[dayOfWeekString as keyof typeof diasTraduzidos]
-        }).`
+        `O profissional ${professional.fullName} não atende neste dia da semana (${diasTraduzidos[dayOfWeekString]}).`
       );
     }
 
-    // ---------------------------------------------------------
     // 3. VALIDAÇÃO DE HORÁRIO DE EXPEDIENTE
-    // ---------------------------------------------------------
     if (professional.scheduleStartHour && professional.scheduleEndHour) {
-      // Comparação de string HH:MM funciona bem (ex: "09:00" > "08:00")
       if (
         data.startTime < professional.scheduleStartHour ||
         data.endTime > professional.scheduleEndHour
@@ -132,52 +131,67 @@ export class AppointmentService {
       }
     }
 
-    // ---------------------------------------------------------
-    // 4. VALIDAÇÃO DE CONFLITO DE HORÁRIO (OVERLAP)
-    // ---------------------------------------------------------
-    // Busca agendamentos do profissional no MESMO dia que não estejam cancelados
-    const conflicts = await prisma.appointment.findMany({
+    // 4. VALIDAÇÃO DE CONFLITO (CORRIGIDA COM RANGE DE DATA)
+    // Aqui usamos gte (maior ou igual) e lte (menor ou igual) para pegar TUDO daquele dia
+    // Isso evita bugs de fuso horário onde a data exata não bate
+    const startOfDayQuery = new Date(data.date + "T00:00:00.000Z");
+    const endOfDayQuery = new Date(data.date + "T23:59:59.999Z");
+
+    const existingAppointments = await prisma.appointment.findMany({
       where: {
         professionalId: data.professionalId,
-        date: appointmentDate, // Prisma compara data exata (YYYY-MM-DDT00:00:00.000Z) se o campo for DateTime
+        // CORREÇÃO AQUI: Range de data
+        date: {
+          gte: startOfDayQuery,
+          lte: endOfDayQuery,
+        },
         status: { not: "CANCELED" },
       },
       select: { startTime: true, endTime: true },
     });
 
-    const hasOverlap = conflicts.some((existing) => {
-      // Lógica de colisão de horário:
-      // (NovoInicio < ExistenteFim) E (NovoFim > ExistenteInicio)
+    // Conta conflitos reais de horário
+    const conflictingCount = existingAppointments.filter((existing) => {
       return (
         data.startTime < existing.endTime && data.endTime > existing.startTime
       );
-    });
+    }).length;
 
-    if (hasOverlap) {
-      throw new SchedulingError(
-        "Já existe um agendamento para este profissional neste horário."
-      );
+    // Aplica regra da clínica
+    if (clinic.allowParallelAppointments) {
+      // Exemplo: Limite 2. Se já tenho 2, conflictingCount = 2.
+      // 2 >= 2 -> ERRO. (Correto, não pode criar o 3º)
+      if (conflictingCount >= clinic.parallelAppointmentsLimit) {
+        throw new SchedulingError(
+          `O limite de agendamentos simultâneos (${clinic.parallelAppointmentsLimit}) para este horário foi atingido.`
+        );
+      }
+    } else {
+      // Padrão: Se tiver qualquer um (1), já bloqueia o 2º.
+      if (conflictingCount > 0) {
+        throw new SchedulingError(
+          "Já existe um agendamento para este profissional neste horário."
+        );
+      }
     }
 
-    // ---------------------------------------------------------
-    // 5. VALIDAÇÃO DE LIMITE DE SESSÕES (Sua lógica existente)
-    // ---------------------------------------------------------
+    // 5. LIMITE DE SESSÕES DO PLANO
     if (data.treatmentPlanProcedureId) {
       const planItem = await prisma.treatmentPlanProcedure.findUnique({
         where: { id: data.treatmentPlanProcedureId },
       });
 
       if (planItem) {
-        const existingAppointments = await prisma.appointment.findMany({
+        const existingPlanAppointments = await prisma.appointment.findMany({
           where: {
             treatmentPlanProcedureId: data.treatmentPlanProcedureId,
             NOT: { status: "CANCELED" },
           },
-          select: { date: true, startTime: true },
+          select: { date: true },
         });
 
-        if (existingAppointments.length >= planItem.contractedSessions) {
-          const scheduledDates = existingAppointments.map((apt) =>
+        if (existingPlanAppointments.length >= planItem.contractedSessions) {
+          const scheduledDates = existingPlanAppointments.map((apt) =>
             format(new Date(apt.date), "dd/MM/yyyy", { locale: ptBR })
           );
 
@@ -189,9 +203,7 @@ export class AppointmentService {
       }
     }
 
-    // ---------------------------------------------------------
-    // 6. CRIAÇÃO DO AGENDAMENTO
-    // ---------------------------------------------------------
+    // 6. CRIAR
     const appointment = await prisma.appointment.create({
       data: {
         patientId: data.patientId,
@@ -200,7 +212,7 @@ export class AppointmentService {
         startTime: data.startTime,
         endTime: data.endTime,
         notes: data.notes,
-        date: appointmentDate,
+        date: appointmentDate, // Salva com a data normalizada
         treatmentPlanId: data.treatmentPlanId,
         treatmentPlanProcedureId: data.treatmentPlanProcedureId,
       },
@@ -209,7 +221,6 @@ export class AppointmentService {
     return appointment;
   }
 
-  // ... (restante dos métodos listPatients, etc. mantidos iguais)
   static async listPatients(clinicId: string) {
     return prisma.patient.findMany({
       where: { clinicId },
@@ -240,10 +251,9 @@ export class AppointmentService {
   ) {
     const existing = await prisma.appointment.findUniqueOrThrow({
       where: { id: appointmentId },
-      include: { professional: true }, // Incluir dados do profissional atual
+      include: { professional: true },
     });
 
-    // 1. Bloqueio de segurança (Status imutáveis)
     if (
       ["CANCELED", "COMPLETED", "CONFIRMED", "WAITING"].includes(
         existing.status
@@ -254,19 +264,21 @@ export class AppointmentService {
       );
     }
 
-    // 2. Determinar quais dados usar (Novos ou existentes)
     const targetProfessionalId = data.professionalId || existing.professionalId;
-    const targetDate = data.date ? new Date(data.date) : existing.date;
 
-    // Pequeno ajuste para garantir a leitura correta do dia da semana (timezone fix)
-    const dateForCheck = new Date(
-      targetDate.toISOString().split("T")[0] + "T12:00:00"
-    );
+    // Tratamento de data no update também
+    let targetDate = existing.date;
+    if (data.date) {
+      targetDate = new Date(data.date + "T00:00:00.000Z");
+    }
+
+    // Data para checagem de dia da semana
+    const dateStr = data.date || existing.date.toISOString().split("T")[0];
+    const dateForCheck = new Date(dateStr + "T12:00:00");
 
     const targetStartTime = data.startTime || existing.startTime;
     const targetEndTime = data.endTime || existing.endTime;
 
-    // Se mudou o profissional OU a data/hora, precisamos revalidar a agenda
     const isRescheduling =
       targetProfessionalId !== existing.professionalId ||
       data.date ||
@@ -274,7 +286,14 @@ export class AppointmentService {
       data.endTime;
 
     if (isRescheduling) {
-      // A. Buscar dados do Profissional Alvo (pode ser o novo ou o mesmo)
+      const clinic = await prisma.clinic.findUniqueOrThrow({
+        where: { id: clinicId },
+        select: {
+          allowParallelAppointments: true,
+          parallelAppointmentsLimit: true,
+        },
+      });
+
       const professional = await prisma.user.findUniqueOrThrow({
         where: { id: targetProfessionalId },
         select: {
@@ -285,13 +304,11 @@ export class AppointmentService {
         },
       });
 
-      // B. Validação de Dia de Funcionamento
       const dayOfWeekNumber = getDay(dateForCheck);
       const dayOfWeekString = DAY_MAP[dayOfWeekNumber];
 
       if (!professional.workingDays.includes(dayOfWeekString)) {
-        // ... lógica de tradução dos dias ...
-        const diasTraduzidos: Record<string, string> = {
+        const diasTraduzidos: any = {
           SUNDAY: "Domingo",
           MONDAY: "Segunda",
           TUESDAY: "Terça",
@@ -307,7 +324,6 @@ export class AppointmentService {
         );
       }
 
-      // C. Validação de Horário de Expediente
       if (professional.scheduleStartHour && professional.scheduleEndHour) {
         if (
           targetStartTime < professional.scheduleStartHour ||
@@ -319,33 +335,50 @@ export class AppointmentService {
         }
       }
 
-      // D. Validação de Conflito (Overlap)
-      const hasConflict = await prisma.appointment.findFirst({
+      // CORREÇÃO NO UPDATE TAMBÉM (Range de Data)
+      const startOfDayQuery = new Date(dateStr + "T00:00:00.000Z");
+      const endOfDayQuery = new Date(dateStr + "T23:59:59.999Z");
+
+      const existingAppointments = await prisma.appointment.findMany({
         where: {
-          professionalId: targetProfessionalId, // Checa na agenda do profissional ALVO
-          date: targetDate,
-          id: { not: appointmentId }, // Ignora o próprio agendamento sendo editado
+          professionalId: targetProfessionalId,
+          date: {
+            gte: startOfDayQuery,
+            lte: endOfDayQuery,
+          },
+          id: { not: appointmentId }, // Ignora ele mesmo
           status: { not: "CANCELED" },
-          AND: [
-            { startTime: { lt: targetEndTime } },
-            { endTime: { gt: targetStartTime } },
-          ],
         },
+        select: { startTime: true, endTime: true },
       });
 
-      if (hasConflict) {
-        throw new SchedulingError(
-          `Conflito de horário na agenda de ${professional.fullName}.`
+      const conflictingCount = existingAppointments.filter((existing) => {
+        return (
+          targetStartTime < existing.endTime &&
+          targetEndTime > existing.startTime
         );
+      }).length;
+
+      if (clinic.allowParallelAppointments) {
+        if (conflictingCount >= clinic.parallelAppointmentsLimit) {
+          throw new SchedulingError(
+            `Este profissional já atingiu o limite de ${clinic.parallelAppointmentsLimit} atendimentos simultâneos (encaixes) neste horário.`
+          );
+        }
+      } else {
+        if (conflictingCount > 0) {
+          throw new SchedulingError(
+            "Já existe um agendamento para este profissional neste horário e a clínica não permite encaixes."
+          );
+        }
       }
     }
 
-    // Atualiza
     return prisma.appointment.update({
       where: { id: appointmentId },
       data: {
-        professionalId: targetProfessionalId, // Atualiza o ID do profissional
-        date: data.date ? new Date(data.date) : undefined,
+        professionalId: targetProfessionalId,
+        date: targetDate,
         startTime: data.startTime,
         endTime: data.endTime,
         notes: data.notes,

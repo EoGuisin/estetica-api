@@ -121,6 +121,9 @@ model Clinic {
   accountId   String
   storageUsed BigInt       @default(0)
 
+  allowParallelAppointments Boolean @default(false)
+  parallelAppointmentsLimit Int     @default(1)
+
   // --- CORREÇÃO AQUI: APENAS A RELAÇÃO N:N ---
   users User[] @relation("UserClinics")
   // REMOVA: userId e a relação antiga user

@@ -87,7 +87,8 @@ export class AuthService {
     const userToReturn = {
       ...userBase,
       accountId: accountId,
-      clinics: clinics, // Retorna o array para o front montar o seletor
+      clinics: clinics,
+      ownedAccount: ownedAccount,
     };
 
     return { user: userToReturn, token };

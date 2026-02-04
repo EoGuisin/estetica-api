@@ -1,7 +1,15 @@
 import { prisma } from "../lib/prisma";
 
 export class ClinicService {
-  static async create(ownerId: string, data: { name: string; taxId: string }) {
+  static async create(
+    ownerId: string,
+    data: {
+      name: string;
+      taxId: string;
+      allowParallelAppointments: boolean;
+      parallelAppointmentsLimit: number;
+    }
+  ) {
     // 1. Primeiro, encontramos a Conta (Account) que pertence a este usuário (Dono)
     const account = await prisma.account.findUnique({
       where: { ownerId },
@@ -18,7 +26,9 @@ export class ClinicService {
       data: {
         name: data.name,
         taxId: data.taxId,
-        status: "ACTIVE", // Já nasce ativa conforme seu pedido
+        allowParallelAppointments: data.allowParallelAppointments,
+        parallelAppointmentsLimit: data.parallelAppointmentsLimit,
+        status: "ACTIVE",
         accountId: account.id,
       },
     });
@@ -29,7 +39,7 @@ export class ClinicService {
     const clinic = await prisma.clinic.findFirst({
       where: {
         id,
-        account: { ownerId }, // Garante segurança: só o dono altera
+        account: { ownerId },
       },
     });
 
@@ -39,7 +49,13 @@ export class ClinicService {
 
     return prisma.clinic.update({
       where: { id },
-      data,
+      data: {
+        name: data.name,
+        taxId: data.taxId,
+        status: data.status,
+        allowParallelAppointments: data.allowParallelAppointments,
+        parallelAppointmentsLimit: data.parallelAppointmentsLimit,
+      },
     });
   }
 
