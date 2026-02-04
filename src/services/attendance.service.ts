@@ -172,11 +172,13 @@ export class AttendanceService {
     let treatmentPlanData = null;
     if (patient.treatmentPlans.length > 0) {
       const plan = patient.treatmentPlans[0];
-      const procedure = plan.procedures[0];
+      const firstProcedure = plan.procedures[0]; // Pega o primeiro só para referência de especialidade/sessões
+
       treatmentPlanData = {
-        specialty: procedure?.procedure?.specialty?.name,
-        procedure: procedure?.procedure?.name,
-        sessions: procedure?.contractedSessions,
+        specialty: firstProcedure?.procedure?.specialty?.name,
+        procedure: firstProcedure?.procedure?.name,
+        procedures: plan.procedures,
+        sessions: firstProcedure?.contractedSessions,
         total: plan.total,
       };
     }
@@ -185,7 +187,7 @@ export class AttendanceService {
       patient,
       clinic,
       treatmentPlan: treatmentPlanData,
-      professionalSignatureUrl, // Passa a assinatura para o PDF inicial
+      professionalSignatureUrl,
       patientSignatureUrl: null,
     });
 

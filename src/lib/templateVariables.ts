@@ -160,25 +160,48 @@ export function substituteVariables(
 
   // Treatment plan data
   if (data.treatmentPlan) {
+    console.log(data);
+
     result = result.replace(
       /{{plano\.especialidade}}/g,
       data.treatmentPlan.specialty || ""
     );
 
-    // Lógica para múltiplos procedimentos
+    // --- INÍCIO DA CORREÇÃO ---
     let procedimentosTexto = "";
-    if (Array.isArray(data.treatmentPlan.procedures)) {
-      procedimentosTexto = data.treatmentPlan.procedures
-        .map((p: any) => p.procedure?.name || p.name)
-        .filter(Boolean)
-        .join(", ");
-    } else {
-      procedimentosTexto = data.treatmentPlan.procedure || "";
+    const listaProcedimentos = data.treatmentPlan.procedures;
+    const procedimentoUnico = data.treatmentPlan.procedure;
+
+    // 1. Verifica se é um array e se tem itens
+    if (Array.isArray(listaProcedimentos) && listaProcedimentos.length > 0) {
+      procedimentosTexto = listaProcedimentos
+        .map((p: any) => {
+          // Tenta extrair o nome de várias formas para garantir que não venha vazio
+          // 1. Se o item já for uma string
+          if (typeof p === "string") return p;
+          // 2. Se for um objeto populado (p.procedure.name)
+          if (p.procedure && p.procedure.name) return p.procedure.name;
+          // 3. Se o nome estiver direto no objeto (p.name)
+          if (p.name) return p.name;
+
+          return ""; // Retorna vazio se não achar
+        })
+        .filter((nome: string) => nome && nome.trim().length > 0) // Remove vazios
+        .join(", "); // Junta com vírgula e espaço (Ex: "Botox, Preenchimento")
     }
+    // 2. Se não for array, tenta pegar do campo singular
+    else if (procedimentoUnico) {
+      procedimentosTexto =
+        typeof procedimentoUnico === "string"
+          ? procedimentoUnico
+          : procedimentoUnico.name || "";
+    }
+
     result = result.replace(
       /{{plano\.procedimento\(s\)}}/g,
       procedimentosTexto
     );
+    // --- FIM DA CORREÇÃO ---
 
     result = result.replace(
       /{{plano\.sessoes}}/g,

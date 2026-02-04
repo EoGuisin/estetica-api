@@ -16,7 +16,10 @@ export class PdfService {
   ];
 
   private static findChromeExecutable(): string | null {
-    if (process.env.CHROME_EXECUTABLE_PATH) {
+    if (
+      process.env.CHROME_EXECUTABLE_PATH &&
+      fs.existsSync(process.env.CHROME_EXECUTABLE_PATH)
+    ) {
       return process.env.CHROME_EXECUTABLE_PATH;
     }
 
