@@ -76,6 +76,7 @@ export const salesReportQuerySchema = z.object({
   startDate: z.string().date({ message: "Data inicial é obrigatória." }),
   endDate: z.string().date({ message: "Data final é obrigatória." }),
   sellerId: z.string().uuid().optional(),
+  status: z.enum(["APPROVED", "DRAFT", "ALL"]).optional().default("ALL"),
 });
 
 export const paymentMethodsReportQuerySchema = z.object({

@@ -114,10 +114,18 @@ export class ReportService {
   /**
    * Gera o template do Cabeçalho do PDF
    */
-  private static getPdfHeader(clinicName: string): string {
+  private static getPdfHeader(
+    clinicName: string,
+    reportTitle?: string
+  ): string {
     return `
       <div style="font-family: Arial, sans-serif; font-size: 10px; text-align: center; border-bottom: 1px solid #ccc; padding: 10px; width: 100%;">
         <h1 style="margin: 0; font-size: 14px;">${clinicName}</h1>
+        ${
+          reportTitle
+            ? `<p style="margin: 2px 0 0 0; font-size: 10px; color: #666;">${reportTitle}</p>`
+            : ""
+        }
       </div>
     `;
   }
@@ -940,22 +948,39 @@ export class ReportService {
     clinicId: string,
     filters: z.infer<typeof salesReportQuerySchema>
   ) {
-    const { startDate, endDate, sellerId } = filters;
+    // 1. Recebe o status dos filtros
+    const { startDate, endDate, sellerId, status } = filters;
+
     const clinic = await prisma.clinic.findUnique({
       where: { id: clinicId },
       select: { name: true },
     });
     if (!clinic) throw new Error("Clínica não encontrada.");
 
-    // Correção de fuso horário
     const startDateObj = new Date(startDate + "T00:00:00");
     const endDateObj = new Date(endDate + "T23:59:59.999");
 
+    // 2. Monta o filtro WHERE dinamicamente
     const where: Prisma.TreatmentPlanWhereInput = {
       clinicId,
       createdAt: { gte: startDateObj, lte: endDateObj },
       sellerId: sellerId || undefined,
     };
+
+    // 3. Aplica a lógica do Status e define o Título do Relatório
+    let reportTitle = "Relatório de Vendas"; // Padrão
+
+    if (status === "APPROVED") {
+      where.status = "APPROVED"; // Apenas Vendas Realizadas
+      reportTitle = "Relatório de Vendas Efetivadas";
+    } else if (status === "DRAFT") {
+      where.status = "DRAFT"; // Apenas Orçamentos
+      reportTitle = "Relatório de Orçamentos (Em Aberto)";
+    } else {
+      // Se for "ALL"
+      where.status = { in: ["APPROVED", "DRAFT"] };
+      reportTitle = "Relatório Geral (Vendas e Orçamentos)";
+    }
 
     const plans = await prisma.treatmentPlan.findMany({
       where,
@@ -971,6 +996,7 @@ export class ReportService {
       orderBy: { createdAt: "desc" },
     });
 
+    // 4. Cálculos de Totais
     let totalValue = new Decimal(0);
     for (const plan of plans) {
       totalValue = totalValue.add(plan.total);
@@ -979,6 +1005,7 @@ export class ReportService {
     const avgTicket =
       totalSales > 0 ? totalValue.dividedBy(totalSales) : new Decimal(0);
 
+    // Lógica de Procedimento Top
     const topProcedureAgg = await prisma.treatmentPlanProcedure.groupBy({
       by: ["procedureId"],
       where: { treatmentPlan: where },
@@ -998,6 +1025,7 @@ export class ReportService {
       topProcedureName = `${procedure?.name} (${topProcedureAgg[0]._sum.contractedSessions} sessões)`;
     }
 
+    // Lógica de Vendedor Top
     let topSellerName = "N/A";
     if (!sellerId) {
       const topSellerAgg = await prisma.treatmentPlan.groupBy({
@@ -1015,7 +1043,14 @@ export class ReportService {
           where: { id: topSellerAgg[0].sellerId },
           select: { fullName: true },
         });
-        topSellerName = `${seller?.fullName} (${this.formatCurrency(
+        // Formatter auxiliar (assumindo que existe na classe ou importado)
+        const formatMoney = (val: any) =>
+          new Intl.NumberFormat("pt-BR", {
+            style: "currency",
+            currency: "BRL",
+          }).format(Number(val));
+
+        topSellerName = `${seller?.fullName} (${formatMoney(
           topSellerAgg[0]._sum.total || 0
         )})`;
       }
@@ -1029,19 +1064,23 @@ export class ReportService {
       topSeller: topSellerName,
     };
 
+    // 5. Gera o HTML (Passando o Título Personalizado)
+    // Nota: Lembre-se de atualizar o método getSalesHtml para aceitar esse novo parâmetro 'reportTitle'
     const html = this.getSalesHtml(
       clinic,
       plans,
       summary,
       startDateObj,
       endDateObj,
-      !!sellerId
+      !!sellerId,
+      reportTitle // <--- Passando o título novo aqui
     );
 
     return PdfService.generatePdfFromHtml(html, {
       format: "A4",
       displayHeaderFooter: true,
-      headerTemplate: this.getPdfHeader(clinic.name),
+      // Aqui atualizamos o cabeçalho para usar o título dinâmico
+      headerTemplate: this.getPdfHeader(clinic.name, reportTitle),
       footerTemplate: this.getPdfFooter(),
       margin: { top: "80px", bottom: "50px", left: "20px", right: "20px" },
     });
@@ -2073,7 +2112,8 @@ export class ReportService {
     summary: any,
     startDate: Date,
     endDate: Date,
-    isFilteredBySeller: boolean
+    isFilteredBySeller: boolean,
+    reportTitle: string // <--- ADICIONADO AQUI
   ) {
     const formattedStartDate = format(startDate, "dd/MM/yyyy", {
       locale: ptBR,
@@ -2110,7 +2150,7 @@ export class ReportService {
         </div>`;
 
     return `
-    <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório de Vendas</title>
+    <!DOCTYPE html><html><head><meta charset="UTF-8"><title>${reportTitle}</title>
       <style>
         body { font-family: Arial, sans-serif; font-size: 10px; color: #333; }
         .report-header { text-align: center; margin-bottom: 15px; }
@@ -2126,8 +2166,7 @@ export class ReportService {
       </style>
     </head><body>
       <div class="report-header">
-        <h2>Relatório de Vendas</h2>
-        <p>Período de ${formattedStartDate} até ${formattedEndDate}</p>
+        <h2>${reportTitle}</h2> <p>Período de ${formattedStartDate} até ${formattedEndDate}</p>
       </div>
       <div class="summary-box">
         <div class="summary-item">
