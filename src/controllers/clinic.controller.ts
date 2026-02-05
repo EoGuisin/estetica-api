@@ -17,12 +17,25 @@ export class ClinicController {
   }
 
   static async update(request: FastifyRequest, reply: FastifyReply) {
-    const { userId } = request.user; // Dono
-    const { id } = request.params as { id: string };
-    const data = updateClinicSchema.parse(request.body);
+    try {
+      const { userId } = request.user;
+      const { id } = request.params as { id: string };
+      const data = updateClinicSchema.parse(request.body);
 
-    const clinic = await ClinicService.update(id, userId, data);
-    return reply.send(clinic);
+      const clinic = await ClinicService.update(id, userId, data);
+      return reply.send(clinic);
+    } catch (error: any) {
+      if (error.isConflictError) {
+        return reply.status(409).send({
+          message: error.message,
+          code: "HOURS_CONFLICT",
+          conflicts: error.conflicts,
+        });
+      }
+
+      // Erros genéricos
+      throw error;
+    }
   }
 
   static async delete(request: FastifyRequest, reply: FastifyReply) {

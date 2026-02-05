@@ -1,3 +1,4 @@
+import { startOfDay } from "date-fns";
 import { prisma } from "../lib/prisma";
 
 export class ClinicService {
@@ -73,7 +74,7 @@ export class ClinicService {
   }
 
   static async update(id: string, ownerId: string, data: any) {
-    // SEGURANÇA: Verifica se a clínica pertence à conta do usuário
+    // 1. Busca a clínica atual para comparar e validar segurança
     const clinic = await prisma.clinic.findFirst({
       where: {
         id,
@@ -85,13 +86,70 @@ export class ClinicService {
       throw new Error("Clínica não encontrada ou acesso negado.");
     }
 
-    // Se estiver tentando alterar o CNPJ, verificar duplicidade
+    // 2. Validação de CNPJ (Mantida)
     if (data.taxId && data.taxId !== clinic.taxId) {
       const taxIdExists = await prisma.clinic.findUnique({
         where: { taxId: data.taxId },
       });
       if (taxIdExists) {
         throw new Error("Este CNPJ já está em uso por outra clínica.");
+      }
+    }
+
+    // 3. --- NOVA VERIFICAÇÃO DE HORÁRIO ---
+    // Se o usuário está tentando mudar os horários...
+    const newOpening = data.openingHour || clinic.openingHour;
+    const newClosing = data.closingHour || clinic.closingHour;
+
+    // Só verificamos se houve mudança real
+    if (
+      newOpening !== clinic.openingHour ||
+      newClosing !== clinic.closingHour
+    ) {
+      // Busca agendamentos de HOJE para frente que conflitem
+      const today = startOfDay(new Date());
+
+      const conflicts = await prisma.appointment.findMany({
+        where: {
+          professional: {
+            // Verifica agendamentos de profissionais desta clínica
+            clinics: { some: { id } },
+          },
+          // Garante que o agendamento é desta clínica (via relação do paciente ou professional)
+          // Melhor abordagem: filtrar por patient.clinicId se seu schema permitir, ou via professional
+          // Assumindo relação direta ou filtro via contexto.
+          // O mais seguro no seu schema atual (Patient -> Clinic) é:
+          patient: { clinicId: id },
+
+          date: { gte: today }, // Apenas datas futuras ou hoje
+          status: { not: "CANCELED" }, // Ignora cancelados
+          OR: [
+            { startTime: { lt: newOpening } }, // Começa ANTES de abrir
+            { endTime: { gt: newClosing } }, // Termina DEPOIS de fechar
+          ],
+        },
+        include: {
+          patient: { select: { name: true } },
+          professional: { select: { fullName: true } },
+        },
+        orderBy: { date: "asc" },
+      });
+
+      if (conflicts.length > 0) {
+        // LANÇA UM ERRO CUSTOMIZADO COM OS DADOS
+        throw {
+          isConflictError: true,
+          message:
+            "Existem agendamentos fora do novo horário de funcionamento.",
+          conflicts: conflicts.map((appt) => ({
+            id: appt.id,
+            patientName: appt.patient.name,
+            professionalName: appt.professional.fullName,
+            date: appt.date,
+            startTime: appt.startTime,
+            endTime: appt.endTime,
+          })),
+        };
       }
     }
 
