@@ -123,6 +123,8 @@ model Clinic {
 
   allowParallelAppointments Boolean @default(false)
   parallelAppointmentsLimit Int     @default(1)
+  openingHour               String  @default("08:00")
+  closingHour               String  @default("18:00")
 
   // --- CORREÇÃO AQUI: APENAS A RELAÇÃO N:N ---
   users User[] @relation("UserClinics")

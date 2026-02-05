@@ -8,4 +8,5 @@ export async function clinicRoutes(app: FastifyInstance) {
   app.post("/", ClinicController.create);
   app.put("/:id", ClinicController.update);
   app.delete("/:id", ClinicController.delete);
+  app.get("/current", ClinicController.getCurrentSettings);
 }

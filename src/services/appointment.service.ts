@@ -90,6 +90,8 @@ export class AppointmentService {
       select: {
         allowParallelAppointments: true,
         parallelAppointmentsLimit: true,
+        openingHour: true,
+        closingHour: true,
       },
     });
 
@@ -117,6 +119,15 @@ export class AppointmentService {
 
     if (!professional) {
       throw new Error("Profissional não encontrado nesta clínica.");
+    }
+
+    if (
+      data.startTime < clinic.openingHour ||
+      data.endTime > clinic.closingHour
+    ) {
+      throw new SchedulingError(
+        `O agendamento deve estar dentro do horário de funcionamento da clínica (${clinic.openingHour} às ${clinic.closingHour}).`
+      );
     }
 
     // --- CORREÇÃO DE DATA ---
@@ -341,8 +352,19 @@ export class AppointmentService {
         select: {
           allowParallelAppointments: true,
           parallelAppointmentsLimit: true,
+          openingHour: true,
+          closingHour: true,
         },
       });
+
+      const checkStart = data.startTime || existing.startTime;
+      const checkEnd = data.endTime || existing.endTime;
+
+      if (checkStart < clinic.openingHour || checkEnd > clinic.closingHour) {
+        throw new SchedulingError(
+          `O agendamento deve estar dentro do horário de funcionamento da clínica (${clinic.openingHour} às ${clinic.closingHour}).`
+        );
+      }
 
       const professional = await prisma.user.findUniqueOrThrow({
         where: { id: targetProfessionalId },

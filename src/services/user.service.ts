@@ -12,6 +12,8 @@ export class UserService {
     const clinic = await prisma.clinic.findUniqueOrThrow({
       where: { id: currentClinicId },
       select: {
+        openingHour: true,
+        closingHour: true,
         account: {
           select: {
             subscription: {
@@ -41,6 +43,17 @@ export class UserService {
       throw new Error(
         `Limite de usuários atingido (${sub.currentMaxUsers}). Faça um upgrade ou compre usuários adicionais.`
       );
+    }
+
+    if (data.scheduleStartHour && data.scheduleEndHour) {
+      if (
+        data.scheduleStartHour < clinic.openingHour ||
+        data.scheduleEndHour > clinic.closingHour
+      ) {
+        throw new Error(
+          `O horário de trabalho do profissional não pode exceder o funcionamento da clínica (${clinic.openingHour} às ${clinic.closingHour}).`
+        );
+      }
     }
 
     const {
@@ -159,10 +172,40 @@ export class UserService {
     return null;
   }
 
-  static async update(id: string, data: any) {
+  static async update(id: string, clinicId: string, data: any) {
     // --- CORREÇÃO 2: Extrair clinicIds do payload ---
     const { specialtyIds, signatureImagePath, clinicIds, ...userData } = data;
     await prisma.user.findFirstOrThrow({ where: { id } });
+
+    if (userData.scheduleStartHour || userData.scheduleEndHour) {
+      const clinic = await prisma.clinic.findUniqueOrThrow({
+        where: { id: clinicId },
+        select: {
+          openingHour: true,
+          closingHour: true,
+        },
+      });
+
+      // Valida Início (se foi enviado)
+      if (
+        userData.scheduleStartHour &&
+        userData.scheduleStartHour < clinic.openingHour
+      ) {
+        throw new Error(
+          `O horário de início (${userData.scheduleStartHour}) não pode ser anterior à abertura da clínica (${clinic.openingHour}).`
+        );
+      }
+
+      // Valida Fim (se foi enviado)
+      if (
+        userData.scheduleEndHour &&
+        userData.scheduleEndHour > clinic.closingHour
+      ) {
+        throw new Error(
+          `O horário de fim (${userData.scheduleEndHour}) não pode ser posterior ao fechamento da clínica (${clinic.closingHour}).`
+        );
+      }
+    }
 
     if (userData.commissionPlanId === "") userData.commissionPlanId = null;
     if (userData.professionalCouncilId === "")
@@ -178,7 +221,7 @@ export class UserService {
           clinicIds === undefined
             ? undefined
             : {
-                set: clinicIds.map((cid: string) => ({ id: cid })), // Substitui todas as clínicas pelas novas
+                set: clinicIds.map((cid: string) => ({ id: cid })),
               },
         specialties:
           specialtyIds === undefined

@@ -36,9 +36,13 @@ export class UserController {
   }
 
   static async update(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // <--- PEGA O ID DA CLÍNICA
     const { id } = request.params as { id: string };
     const data = updateUserSchema.parse(request.body);
-    const user = await UserService.update(id, data);
+
+    // Passa o clinicId para o serviço
+    const user = await UserService.update(id, clinicId, data);
+
     return reply.send(user);
   }
 

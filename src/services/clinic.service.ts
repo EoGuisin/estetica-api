@@ -1,16 +1,40 @@
 import { prisma } from "../lib/prisma";
 
 export class ClinicService {
+  static async getById(clinicId: string) {
+    const clinic = await prisma.clinic.findUnique({
+      where: { id: clinicId },
+      select: {
+        id: true,
+        name: true,
+        taxId: true,
+        status: true,
+        openingHour: true,
+        closingHour: true,
+        allowParallelAppointments: true,
+        parallelAppointmentsLimit: true,
+      },
+    });
+
+    if (!clinic) {
+      throw new Error("Clínica não encontrada.");
+    }
+
+    return clinic;
+  }
+
   static async create(
     ownerId: string,
     data: {
       name: string;
       taxId: string;
-      allowParallelAppointments: boolean;
-      parallelAppointmentsLimit: number;
+      allowParallelAppointments?: boolean;
+      parallelAppointmentsLimit?: number;
+      openingHour?: string;
+      closingHour?: string;
     }
   ) {
-    // 1. Verifica se já existe clínica com este CNPJ/TaxID (Regra Global)
+    // 1. Verifica se já existe clínica com este CNPJ/TaxID
     const existingClinic = await prisma.clinic.findUnique({
       where: { taxId: data.taxId },
     });
@@ -35,12 +59,12 @@ export class ClinicService {
       data: {
         name: data.name,
         taxId: data.taxId,
-        allowParallelAppointments: data.allowParallelAppointments,
-        parallelAppointmentsLimit: data.parallelAppointmentsLimit,
+        allowParallelAppointments: data.allowParallelAppointments ?? false,
+        parallelAppointmentsLimit: data.parallelAppointmentsLimit ?? 1,
+        openingHour: data.openingHour ?? "08:00",
+        closingHour: data.closingHour ?? "18:00",
         status: "ACTIVE",
         accountId: account.id,
-        // MELHORIA: Conecta o dono imediatamente à lista de usuários da clínica
-        // Isso popula a tabela de relação _UserClinics
         users: {
           connect: { id: ownerId },
         },
@@ -53,7 +77,7 @@ export class ClinicService {
     const clinic = await prisma.clinic.findFirst({
       where: {
         id,
-        account: { ownerId }, // <--- Trava de segurança
+        account: { ownerId },
       },
     });
 
@@ -76,15 +100,16 @@ export class ClinicService {
       data: {
         name: data.name,
         taxId: data.taxId,
-        status: data.status, // ACTIVE, INACTIVE, etc.
+        status: data.status,
         allowParallelAppointments: data.allowParallelAppointments,
         parallelAppointmentsLimit: data.parallelAppointmentsLimit,
+        openingHour: data.openingHour,
+        closingHour: data.closingHour,
       },
     });
   }
 
   static async delete(id: string, ownerId: string) {
-    // SEGURANÇA: Verifica propriedade
     const clinic = await prisma.clinic.findFirst({
       where: {
         id,
@@ -96,9 +121,6 @@ export class ClinicService {
       throw new Error("Clínica não encontrada ou acesso negado.");
     }
 
-    // Nota: O delete pode falhar se o banco não tiver CASCADE configurado
-    // nas relações (pacientes, agendamentos, etc).
-    // Idealmente, deve-se inativar a clínica em vez de deletar.
     return prisma.clinic.delete({
       where: { id },
     });

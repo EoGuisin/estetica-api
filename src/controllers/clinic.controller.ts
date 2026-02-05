@@ -32,4 +32,20 @@ export class ClinicController {
     await ClinicService.delete(id, userId);
     return reply.status(204).send();
   }
+
+  static async getCurrentSettings(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const { clinicId } = request; // Middleware injetou o ID aqui
+
+    if (!clinicId) {
+      return reply
+        .status(400)
+        .send({ message: "Contexto de clínica não identificado." });
+    }
+
+    const clinic = await ClinicService.getById(clinicId);
+    return reply.send(clinic);
+  }
 }
