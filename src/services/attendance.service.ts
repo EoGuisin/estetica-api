@@ -207,7 +207,13 @@ export class AttendanceService {
       .from(DOCUMENTS_BUCKET)
       .upload(filePath, pdfBuffer, { contentType: "application/pdf" });
 
-    if (uploadError) throw new Error("Erro ao fazer upload do PDF.");
+    if (uploadError) {
+      console.error(
+        "Supabase Upload Error Details:",
+        JSON.stringify(uploadError, null, 2)
+      );
+      throw new Error(`Erro ao fazer upload do PDF: ${uploadError.message}`);
+    }
 
     const document = await prisma.patientDocument.create({
       data: {

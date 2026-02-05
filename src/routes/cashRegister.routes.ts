@@ -20,4 +20,6 @@ export async function cashRegisterRoutes(app: FastifyInstance) {
 
   // Buscar detalhes de UMA sessão específica (para ver o relatório dela)
   app.get("/:sessionId", CashRegisterController.getSessionDetails);
+
+  app.get("/active-summary", CashRegisterController.getActiveSessionSummary);
 }

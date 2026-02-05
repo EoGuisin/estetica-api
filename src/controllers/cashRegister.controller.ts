@@ -9,6 +9,7 @@ import {
 } from "../schemas/cashRegister.schema";
 import { CashRegisterService } from "../services/cashRegister.service";
 import { CashRegisterSessionStatus } from "@prisma/client";
+import { prisma } from "../lib/prisma";
 
 export class CashRegisterController {
   static async openSession(request: FastifyRequest, reply: FastifyReply) {
@@ -87,5 +88,37 @@ export class CashRegisterController {
       }
     );
     return reply.send(result);
+  }
+
+  static async getActiveSessionSummary(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const { clinicId } = request;
+
+    // Find all open sessions for this clinic
+    const openSessions = await prisma.cashRegisterSession.findMany({
+      where: {
+        clinicId,
+        status: "OPEN",
+      },
+      include: {
+        transactions: {
+          where: { type: "REVENUE" }, // We only care about money coming in
+          select: { amount: true },
+        },
+      },
+    });
+
+    // Sum the total amount from all transactions in open sessions
+    const totalReceivedInOpenSessions = openSessions.reduce((acc, session) => {
+      const sessionTotal = session.transactions.reduce(
+        (sum, tx) => sum + Number(tx.amount),
+        0
+      );
+      return acc + sessionTotal;
+    }, 0);
+
+    return reply.send({ totalReceived: totalReceivedInOpenSessions });
   }
 }

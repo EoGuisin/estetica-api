@@ -118,20 +118,22 @@ export class CashRegisterService {
    * incluindo todas as transações financeiras vinculadas.
    */
   static async getSessionDetails(clinicId: string, sessionId: string) {
-    // SEGURANÇA: Garante que a sessão pertence à clínica
+    // SECURITY: Ensure the session belongs to the clinic
     const session = await prisma.cashRegisterSession.findFirstOrThrow({
       where: { id: sessionId, clinicId },
       include: {
         bankAccount: { select: { name: true } },
         openedByUser: { select: { fullName: true } },
         closedByUser: { select: { fullName: true } },
+        // --- CRITICAL FIX: INCLUDE TRANSACTIONS ---
         transactions: {
           orderBy: { date: "asc" },
           include: {
+            // Include installment data to know the PAYMENT METHOD
             paymentInstallment: {
               select: {
                 installmentNumber: true,
-                paymentMethod: true,
+                paymentMethod: true, // Required for method breakdown
                 treatmentPlan: {
                   select: { patient: { select: { name: true } } },
                 },
@@ -148,6 +150,7 @@ export class CashRegisterService {
       },
     });
 
+    // Calculate totals on the backend for consistency
     const totals = session.transactions.reduce(
       (acc, tx) => {
         if (tx.type === "REVENUE") {
