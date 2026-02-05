@@ -12,7 +12,7 @@ export class DashboardController {
     const { clinicId } = request;
     const user = request.user as unknown as DecodedUser;
 
-    // Passamos o ID do usuário que está chamando a rota
+    // Passamos o ID do usuário que está chamando a rota para verificar permissões
     const professionals = await DashboardService.getProfessionals(
       clinicId,
       user.userId
@@ -39,10 +39,9 @@ export class DashboardController {
 
     const professionalIds = professionals?.split(",").filter((id) => id);
 
-    // Passamos o ID do usuário logado para filtrar agendamentos se necessário
     const appointments = await DashboardService.getAppointments(
       clinicId,
-      user.userId, // <--- NOVO
+      user.userId,
       new Date(start),
       new Date(end),
       professionalIds

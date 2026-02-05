@@ -15,7 +15,7 @@ export class CatalogService {
     return prisma[model].findFirst({
       where: {
         id,
-        clinicId,
+        clinicId, // SEGURANÇA
       },
     });
   }
@@ -25,7 +25,7 @@ export class CatalogService {
     // @ts-ignore
     return prisma[model].findMany({
       where: {
-        clinicId: clinicId,
+        clinicId: clinicId, // SEGURANÇA
       },
       orderBy: { name: "asc" },
     });
@@ -38,7 +38,7 @@ export class CatalogService {
   ) {
     // @ts-ignore
     return prisma[model].create({
-      data: { ...data, clinicId },
+      data: { ...data, clinicId }, // SEGURANÇA: Cria vinculado à clínica
     });
   }
 
@@ -48,15 +48,19 @@ export class CatalogService {
     data: { name: string },
     clinicId: string
   ) {
+    // SEGURANÇA: Verifica se existe E pertence à clínica antes de atualizar
     // @ts-ignore
     await prisma[model].findFirstOrThrow({ where: { id, clinicId } });
+
     // @ts-ignore
     return prisma[model].update({ where: { id }, data });
   }
 
   static async delete(model: CatalogModel, id: string, clinicId: string) {
+    // SEGURANÇA: Verifica se existe E pertence à clínica antes de deletar
     // @ts-ignore
     await prisma[model].findFirstOrThrow({ where: { id, clinicId } });
+
     // @ts-ignore
     return prisma[model].delete({ where: { id } });
   }
@@ -119,8 +123,6 @@ export class CatalogService {
         cleanRow["Preço"] || cleanRow["Valor"] || cleanRow["Preco"] || "0";
 
       if (!name || !specialtyName) {
-        // Log para você debugar se necessário
-        console.log(`Erro na linha ${rowNum}:`, cleanRow);
         results.errors.push(
           `Linha ${rowNum}: Nome e Especialidade são obrigatórios.`
         );
@@ -146,11 +148,11 @@ export class CatalogService {
 
       try {
         await prisma.$transaction(async (tx) => {
-          // 1. Busca ou Cria Especialidade
+          // 1. Busca ou Cria Especialidade (DENTRO DA CLÍNICA)
           let specialty = await tx.specialty.findFirst({
             where: {
               name: { equals: specialtyName, mode: "insensitive" },
-              clinicId: clinicId,
+              clinicId: clinicId, // <--- SEGURANÇA
             },
           });
 
@@ -158,16 +160,16 @@ export class CatalogService {
             specialty = await tx.specialty.create({
               data: {
                 name: specialtyName,
-                clinicId: clinicId,
+                clinicId: clinicId, // <--- SEGURANÇA
               },
             });
           }
 
-          // 2. Cria ou Atualiza Procedimento
+          // 2. Cria ou Atualiza Procedimento (DENTRO DA CLÍNICA)
           const existingProc = await tx.procedure.findFirst({
             where: {
               name: { equals: name, mode: "insensitive" },
-              clinicId: clinicId,
+              clinicId: clinicId, // <--- SEGURANÇA
             },
           });
 
@@ -177,14 +179,13 @@ export class CatalogService {
                 name,
                 standardPrice,
                 specialtyId: specialty.id,
-                clinicId,
+                clinicId, // <--- SEGURANÇA
               },
             });
             results.success++;
           } else {
-            // Opcional: Atualizar preço se já existir? Por segurança, apenas avisamos.
             results.errors.push(
-              `Linha ${rowNum}: Procedimento "${name}" já existe.`
+              `Linha ${rowNum}: Procedimento "${name}" já existe nesta clínica.`
             );
           }
         });

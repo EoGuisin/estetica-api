@@ -14,7 +14,7 @@ export class BankAccountService {
     return prisma.bankAccount.create({
       data: {
         ...data,
-        clinicId,
+        clinicId, // Garante vínculo na criação
       },
     });
   }
@@ -25,7 +25,7 @@ export class BankAccountService {
     pageSize: number,
     name?: string
   ) {
-    const where: Prisma.BankAccountWhereInput = { clinicId };
+    const where: Prisma.BankAccountWhereInput = { clinicId }; // Garante filtro na listagem
     if (name) {
       where.name = { contains: name, mode: "insensitive" };
     }
@@ -46,7 +46,7 @@ export class BankAccountService {
 
   static async getById(id: string, clinicId: string) {
     return prisma.bankAccount.findFirstOrThrow({
-      where: { id, clinicId },
+      where: { id, clinicId }, // Garante isolamento na busca única
     });
   }
 
@@ -55,29 +55,33 @@ export class BankAccountService {
     clinicId: string,
     data: z.infer<typeof updateBankAccountSchema>
   ) {
+    // 1. Verificação de Segurança (Propriedade)
     await prisma.bankAccount.findFirstOrThrow({
       where: { id, clinicId },
     });
+
+    // 2. Atualização
     return prisma.bankAccount.update({
       where: { id },
       data: {
-        name: data.name, // Permite apenas a atualização do nome
+        name: data.name,
       },
     });
   }
 
   static async delete(id: string, clinicId: string) {
+    // 1. Verificação de Segurança (Propriedade)
     await prisma.bankAccount.findFirstOrThrow({
       where: { id, clinicId },
     });
 
-    // REGRA DE NEGÓCIO: Não permitir exclusão se a conta tiver transações
-    // ou sessões de caixa (abertas ou fechadas).
+    // 2. Verificação de Dependências (Regra de Negócio)
+    // Adicionei clinicId aqui também para manter consistência total
     const transactionCount = await prisma.financialTransaction.count({
-      where: { bankAccountId: id },
+      where: { bankAccountId: id, clinicId },
     });
     const sessionCount = await prisma.cashRegisterSession.count({
-      where: { bankAccountId: id },
+      where: { bankAccountId: id, clinicId },
     });
 
     if (transactionCount > 0 || sessionCount > 0) {

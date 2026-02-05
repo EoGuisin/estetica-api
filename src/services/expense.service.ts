@@ -8,7 +8,7 @@ import {
 
 export class ExpenseService {
   static async create(data: CreateExpenseInput, clinicId: string) {
-    // Opcional: Validar se supplierId e categoryId pertencem à clínica
+    // SEGURANÇA: Validar se supplier e category pertencem à clínica
     if (data.supplierId) {
       await prisma.supplier.findFirstOrThrow({
         where: { id: data.supplierId, clinicId },
@@ -24,7 +24,7 @@ export class ExpenseService {
       data: {
         ...data,
         dueDate: new Date(data.dueDate),
-        clinicId,
+        clinicId, // Vínculo forçado
       },
     });
   }
@@ -41,10 +41,9 @@ export class ExpenseService {
       supplierId?: string;
     }
   ) {
-    const where: Prisma.ExpenseWhereInput = { clinicId };
+    const where: Prisma.ExpenseWhereInput = { clinicId }; // SEGURANÇA
     const now = new Date();
 
-    // Lógica de Status similar a PaymentInstallment
     if (filters.status && filters.status.length > 0) {
       const directStatuses = filters.status.filter(
         (s) => s !== PaymentStatus.OVERDUE
@@ -85,7 +84,6 @@ export class ExpenseService {
       prisma.expense.count({ where }),
     ]);
 
-    // Adiciona status OVERDUE dinamicamente
     const expensesWithStatus = expenses.map((exp) => ({
       ...exp,
       status:
@@ -99,14 +97,15 @@ export class ExpenseService {
 
   static async getById(id: string, clinicId: string) {
     return prisma.expense.findFirst({
-      where: { id, clinicId },
+      where: { id, clinicId }, // SEGURANÇA
       include: { category: true, supplier: true },
     });
   }
 
   static async update(id: string, clinicId: string, data: UpdateExpenseInput) {
     await prisma.expense.findFirstOrThrow({ where: { id, clinicId } });
-    // Opcional: Validar supplierId e categoryId se forem alterados
+
+    // SEGURANÇA: Validar se novos vínculos pertencem à clínica
     if (data.supplierId)
       await prisma.supplier.findFirstOrThrow({
         where: { id: data.supplierId, clinicId },
@@ -136,23 +135,21 @@ export class ExpenseService {
     data: MarkExpenseAsPaidInput
   ) {
     return prisma.$transaction(async (tx) => {
-      // Envolve em transação
       // 1. Valida e busca a despesa
       const expense = await tx.expense.findFirstOrThrow({
         where: {
           id,
-          clinicId,
+          clinicId, // SEGURANÇA
           status: { in: [PaymentStatus.PENDING, PaymentStatus.OVERDUE] },
         },
       });
 
-      // --- Validação da Conta Bancária ---
+      // 2. Validação da Conta Bancária
       await tx.bankAccount.findFirstOrThrow({
-        where: { id: data.bankAccountId, clinicId: clinicId },
+        where: { id: data.bankAccountId, clinicId: clinicId }, // SEGURANÇA
       });
-      // ---------------------------------
 
-      // 2. Atualiza o status da despesa
+      // 3. Atualiza o status da despesa
       const updatedExpense = await tx.expense.update({
         where: { id },
         data: {
@@ -161,14 +158,16 @@ export class ExpenseService {
         },
       });
 
+      // 4. Busca sessão ativa
       const activeSession = await tx.cashRegisterSession.findFirst({
         where: {
           bankAccountId: data.bankAccountId,
+          clinicId: clinicId, // SEGURANÇA: Garante que a sessão é desta clínica
           status: "OPEN",
         },
       });
 
-      // 4. REGRA DE NEGÓCIO: Se o caixa estiver fechado, BLOQUEAR.
+      // 5. REGRA DE NEGÓCIO: Se o caixa estiver fechado, BLOQUEAR.
       if (!activeSession) {
         const bankAccount = await tx.bankAccount.findUnique({
           where: { id: data.bankAccountId },
@@ -181,7 +180,7 @@ export class ExpenseService {
         );
       }
 
-      // 5. Cria a transação financeira de SAÍDA VINCULADA
+      // 6. Cria a transação financeira de SAÍDA VINCULADA
       await tx.financialTransaction.create({
         data: {
           clinicId: clinicId,
@@ -191,21 +190,17 @@ export class ExpenseService {
           date: new Date(data.paymentDate),
           bankAccountId: data.bankAccountId,
           expenseId: updatedExpense.id,
-          // Vincula obrigatoriamente à sessão ativa
           cashRegisterSessionId: activeSession.id,
         },
       });
 
-      // 6. Atualiza o saldo da BankAccount (DECREMENTAR)
+      // 7. Atualiza o saldo da BankAccount
       await tx.bankAccount.update({
         where: { id: data.bankAccountId },
         data: { balance: { decrement: updatedExpense.amount } },
       });
-      console.log(
-        `Saldo da conta ${data.bankAccountId} decrementado em ${updatedExpense.amount}.`
-      );
 
-      return updatedExpense; // Retorna a despesa atualizada
+      return updatedExpense;
     });
   }
 }

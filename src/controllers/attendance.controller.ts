@@ -40,17 +40,14 @@ export class AttendanceController {
 
   static async generateDocument(request: FastifyRequest, reply: FastifyReply) {
     const { clinicId } = request;
-    // Não pegamos mais o user.id aqui para definir o profissional
-
-    // Parse do body usando o schema atualizado
     const { patientId, templateId, professionalId } =
       generateDocumentSchema.parse(request.body);
 
     const document = await AttendanceService.generateDocumentFromTemplate({
       patientId,
       templateId,
-      clinicId,
-      professionalId, // <--- Usa o ID que veio do Frontend (Select)
+      clinicId, // Já estava passando, OK
+      professionalId,
     });
 
     return reply.status(201).send(document);
@@ -68,22 +65,26 @@ export class AttendanceController {
   }
 
   static async saveDiagnosis(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // ADICIONADO
     const { appointmentId } = appointmentParamsSchema.parse(request.params);
     const { diagnosis } = saveDiagnosisSchema.parse(request.body);
 
     const record = await AttendanceService.saveDiagnosis(
       appointmentId,
-      diagnosis
+      diagnosis,
+      clinicId // PASSADO PARA O SERVICE
     );
     return reply.send(record);
   }
 
   static async listAttachments(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // ADICIONADO
     const { patientId } = patientParamsSchema.parse(request.params);
-    const { clinicId } = request;
 
-    // You might want to add a check to ensure the patient belongs to the clinic
-    const attachments = await AttendanceService.listAttachments(patientId);
+    const attachments = await AttendanceService.listAttachments(
+      patientId,
+      clinicId // PASSADO PARA O SERVICE
+    );
     return reply.send(attachments);
   }
 
@@ -102,9 +103,10 @@ export class AttendanceController {
   }
 
   static async saveAttachment(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // ADICIONADO
     const data = saveAttachmentSchema.parse(request.body);
 
-    const attachment = await AttendanceService.saveAttachment(data);
+    const attachment = await AttendanceService.saveAttachment(data, clinicId); // PASSADO PARA O SERVICE
     return reply.status(201).send(attachment);
   }
 
@@ -120,8 +122,12 @@ export class AttendanceController {
     request: FastifyRequest,
     reply: FastifyReply
   ) {
+    const { clinicId } = request; // ADICIONADO
     const { patientId } = patientParamsSchema.parse(request.params);
-    const images = await AttendanceService.getBeforeAfterImages(patientId);
+    const images = await AttendanceService.getBeforeAfterImages(
+      patientId,
+      clinicId // PASSADO PARA O SERVICE
+    );
     return reply.send(images);
   }
 
@@ -143,18 +149,21 @@ export class AttendanceController {
     request: FastifyRequest,
     reply: FastifyReply
   ) {
+    const { clinicId } = request; // ADICIONADO
     const data = saveBeforeAfterSchema.parse(request.body);
-    const image = await AttendanceService.saveBeforeAfterImage(data);
+    const image = await AttendanceService.saveBeforeAfterImage(data, clinicId); // PASSADO PARA O SERVICE
     return reply.status(201).send(image);
   }
 
   static async updateAfterImage(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // ADICIONADO
     const { imageId } = beforeAfterParamsSchema.parse(request.params);
     const { afterImagePath } = updateAfterImageSchema.parse(request.body);
 
     const updatedImage = await AttendanceService.updateAfterImage(
       imageId,
-      afterImagePath
+      afterImagePath,
+      clinicId // PASSADO PARA O SERVICE
     );
     return reply.send(updatedImage);
   }
@@ -171,10 +180,15 @@ export class AttendanceController {
   }
 
   static async listDocuments(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // ADICIONADO
     const { patientId } = patientParamsSchema.parse(request.params);
     const { type } = listDocumentsQuerySchema.parse(request.query);
 
-    const documents = await AttendanceService.listDocuments(patientId, type);
+    const documents = await AttendanceService.listDocuments(
+      patientId,
+      type,
+      clinicId // PASSADO PARA O SERVICE
+    );
     return reply.send(documents);
   }
 
@@ -193,9 +207,10 @@ export class AttendanceController {
   }
 
   static async saveDocument(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // ADICIONADO
     const data = saveDocumentSchema.parse(request.body);
 
-    const document = await AttendanceService.saveDocument(data);
+    const document = await AttendanceService.saveDocument(data, clinicId); // PASSADO PARA O SERVICE
     return reply.status(201).send(document);
   }
 
@@ -211,8 +226,10 @@ export class AttendanceController {
     const { documentId } = documentParamsSchema.parse(request.params);
     const { clinicId } = request;
 
-    const { signedUrl, fileName, fileType } =
-      await AttendanceService.getDocumentDownloadUrl(documentId, clinicId);
+    const { signedUrl } = await AttendanceService.getDocumentDownloadUrl(
+      documentId,
+      clinicId
+    );
 
     return reply.redirect(signedUrl, 302);
   }
@@ -251,24 +268,31 @@ export class AttendanceController {
   }
 
   static async updateDiagnosis(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // ADICIONADO
     const { appointmentId } = appointmentParamsSchema.parse(request.params);
     const { diagnosis } = updateDiagnosisSchema.parse(request.body);
 
+    // Reutiliza o saveDiagnosis que agora exige clinicId
     const clinicalRecord = await AttendanceService.saveDiagnosis(
       appointmentId,
-      diagnosis
+      diagnosis,
+      clinicId
     );
     return reply.send(clinicalRecord);
   }
 
   static async signDocument(request: FastifyRequest, reply: FastifyReply) {
+    const { clinicId } = request; // ADICIONADO
     const { documentId } = documentParamsSchema.parse(request.params);
     const { signature } = signDocumentBodySchema.parse(request.body);
 
-    await AttendanceService.signDocument({
-      documentId,
-      signatureBase64: signature,
-    });
+    await AttendanceService.signDocument(
+      {
+        documentId,
+        signatureBase64: signature,
+      },
+      clinicId // PASSADO PARA O SERVICE
+    );
 
     return reply
       .status(200)

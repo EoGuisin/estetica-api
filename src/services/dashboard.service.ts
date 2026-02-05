@@ -1,27 +1,27 @@
-// src/services/dashboard.service.ts
 import { prisma } from "../lib/prisma";
 import { startOfDay, endOfDay } from "date-fns";
+import { Prisma } from "@prisma/client";
 
 export class DashboardService {
   /**
-   * Helper para verificar se o usuário tem visão restrita.
+   * Helper para verificar se o usuário tem visão restrita (vê apenas a si mesmo).
    */
   private static async checkRestriction(userId: string, clinicId: string) {
-    // 1. Busca dados da Clínica (para saber quem é o dono da conta dela)
+    // 1. Busca dados da Clínica
     const clinic = await prisma.clinic.findUnique({
       where: { id: clinicId },
       select: { account: { select: { ownerId: true } } },
     });
 
-    // 2. Busca dados do Usuário (para saber o cargo)
+    // 2. Busca dados do Usuário
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: { role: true },
     });
 
-    if (!user || !clinic) return true; // Por segurança, bloqueia se não achar
+    if (!user || !clinic) return true; // Por segurança, restringe se não achar
 
-    // CHECK 1: É o Dono da Conta dessa clínica?
+    // CHECK 1: É o Dono da Conta?
     if (clinic.account.ownerId === userId) {
       return false; // LIBERADO (Vê tudo)
     }
@@ -32,7 +32,7 @@ export class DashboardService {
       return false; // LIBERADO (Vê tudo)
     }
 
-    // Se chegou aqui, é um profissional comum (não dono, não admin)
+    // Se chegou aqui, é um profissional comum
     return true; // RESTRITO (Vê só a si mesmo)
   }
 
@@ -40,33 +40,30 @@ export class DashboardService {
    * Busca os profissionais de uma clínica específica.
    */
   static async getProfessionals(clinicId: string, requestingUserId: string) {
-    // Verifica se deve restringir a lista
     const isRestricted = await this.checkRestriction(
       requestingUserId,
       clinicId
     );
 
-    // Descobrir o ownerId para garantir que ele apareça na lista se for profissional
     const clinic = await prisma.clinic.findUnique({
       where: { id: clinicId },
       select: { account: { select: { ownerId: true } } },
     });
     const ownerId = clinic?.account.ownerId;
 
-    const whereClause: any = {
+    const whereClause: Prisma.UserWhereInput = {
       isProfessional: true,
       OR: [
-        // Profissionais vinculados a esta clínica (Tabela N:N)
+        // Profissionais vinculados a esta clínica
         { clinics: { some: { id: clinicId } } },
-        // OU o dono da conta (se ele for marcado como isProfessional)
+        // OU o dono da conta (se for profissional)
         ...(ownerId ? [{ id: ownerId }] : []),
       ],
     };
 
     // --- APLICA A RESTRIÇÃO ---
     if (isRestricted) {
-      // Se for restrito, forçamos o ID dele.
-      // Isso fará a lista retornar apenas 1 item (ele mesmo).
+      // Se restrito, força o ID para ser apenas o do usuário logado
       whereClause.id = requestingUserId;
     }
 
@@ -102,7 +99,8 @@ export class DashboardService {
     const start = startOfDay(startDate);
     const end = endOfDay(endDate);
 
-    const whereClause: any = {
+    const whereClause: Prisma.AppointmentWhereInput = {
+      // SEGURANÇA CRÍTICA: Filtra pacientes desta clínica
       patient: {
         clinicId: clinicId,
       },
@@ -110,11 +108,14 @@ export class DashboardService {
         gte: start,
         lte: end,
       },
+      status: { not: "CANCELED" }, // Opcional: geralmente dashboard não mostra cancelados ou mostra diferente
     };
 
     if (isRestricted) {
+      // Se restrito, vê apenas seus próprios agendamentos
       whereClause.professionalId = requestingUserId;
     } else {
+      // Se liberado, aplica filtro opcional de profissionais selecionados no front
       if (professionalIds && professionalIds.length > 0) {
         whereClause.professionalId = {
           in: professionalIds,
@@ -136,7 +137,7 @@ export class DashboardService {
         },
         professional: {
           select: {
-            id: true, // <--- ADICIONADO: Importante trazer o ID aqui também
+            id: true,
             fullName: true,
             color: true,
           },

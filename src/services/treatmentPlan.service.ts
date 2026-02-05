@@ -10,7 +10,6 @@ import { CommissionRecordService } from "./commissionRecord.service";
 
 export class TreatmentPlanService {
   // --- MÉTODO PRIVADO: GERA FINANCEIRO E COMISSÃO ---
-  // Reutilizável para Criação Direta e Aprovação
   private static async generateFinancials(
     tx: any,
     planId: string,
@@ -28,8 +27,6 @@ export class TreatmentPlanService {
     const installmentsData = [];
     let currentDueDate = firstDueDate ? new Date(firstDueDate) : new Date();
 
-    // Se não veio data e estamos gerando agora, joga pra 30 dias (ou mantém hoje se for entrada)
-    // Ajuste conforme sua regra de negócio. Aqui vou assumir que se não tem data, é D+30
     if (!firstDueDate) {
       currentDueDate.setDate(currentDueDate.getDate() + 30);
     }
@@ -74,16 +71,30 @@ export class TreatmentPlanService {
   ) {
     const { procedures, paymentTerms, isBudget, ...planData } = data;
 
+    // SEGURANÇA: Verificar se paciente pertence à clínica
+    const patientCheck = await prisma.patient.findFirst({
+      where: { id: planData.patientId, clinicId },
+    });
+    if (!patientCheck)
+      throw new Error("Paciente não encontrado ou acesso negado.");
+
+    // SEGURANÇA: Verificar se vendedor pertence à clínica
+    const sellerCheck = await prisma.user.findFirst({
+      where: { id: planData.sellerId, clinics: { some: { id: clinicId } } },
+    });
+    if (!sellerCheck)
+      throw new Error("Vendedor não encontrado ou acesso negado.");
+
     return prisma.$transaction(async (tx) => {
       // 1. Cria o Plano (DRAFT ou APPROVED)
       const newPlan = await tx.treatmentPlan.create({
         data: {
           ...planData,
-          clinicId,
+          clinicId, // Vínculo forçado
           status: isBudget
             ? TreatmentPlanStatus.DRAFT
             : TreatmentPlanStatus.APPROVED,
-          installmentCount: paymentTerms.numberOfInstallments, // Salva para usar depois se for draft
+          installmentCount: paymentTerms.numberOfInstallments,
           procedures: {
             create: procedures.map((proc) => ({
               procedureId: proc.procedureId,
@@ -113,10 +124,12 @@ export class TreatmentPlanService {
     });
   }
 
-  // --- NOVO: APROVAR ORÇAMENTO ---
+  // --- APROVAR ORÇAMENTO ---
   static async approve(id: string, clinicId: string) {
-    const plan = await prisma.treatmentPlan.findUnique({
-      where: { id, clinicId },
+    // SEGURANÇA: findUnique com clinicId composto ou findFirst
+    // Como id é único, findUnique é ok, mas findFirst com clinicId é mais seguro para garantir acesso
+    const plan = await prisma.treatmentPlan.findFirst({
+      where: { id, clinicId }, // SEGURANÇA
       include: { paymentInstallments: true },
     });
 
@@ -125,13 +138,12 @@ export class TreatmentPlanService {
       throw new Error("Este plano já foi aprovado ou cancelado.");
 
     return prisma.$transaction(async (tx) => {
-      // Gera o financeiro baseado no que foi salvo no draft
       await this.generateFinancials(
         tx,
         plan.id,
         clinicId,
         Number(plan.total),
-        plan.installmentCount || 1, // Fallback se estiver nulo
+        plan.installmentCount || 1,
         new Date() // Data da primeira parcela = Hoje (ou lógica de D+30) ao aprovar
       );
 
@@ -150,8 +162,8 @@ export class TreatmentPlanService {
     const { procedures, paymentTerms, isBudget, ...planData } = data;
 
     // 1. Verificar se o plano existe e se ainda é um rascunho (DRAFT)
-    const existingPlan = await prisma.treatmentPlan.findUnique({
-      where: { id, clinicId },
+    const existingPlan = await prisma.treatmentPlan.findFirst({
+      where: { id, clinicId }, // SEGURANÇA
     });
 
     if (!existingPlan) throw new Error("Plano de tratamento não encontrado.");
@@ -206,14 +218,14 @@ export class TreatmentPlanService {
     });
   }
 
-  // --- NOVO: DELETAR COM SEGURANÇA ---
+  // --- DELETAR COM SEGURANÇA ---
   static async delete(id: string, clinicId: string) {
-    const plan = await prisma.treatmentPlan.findUnique({
-      where: { id, clinicId },
+    const plan = await prisma.treatmentPlan.findFirst({
+      where: { id, clinicId }, // SEGURANÇA
       include: {
         paymentInstallments: true,
         commissionRecords: true,
-        appointments: true, // Para verificar se já atendeu
+        appointments: true,
       },
     });
 
@@ -225,7 +237,7 @@ export class TreatmentPlanService {
     );
     const hasPaidCommission = plan.commissionRecords.some(
       (c) => c.status === "PAID"
-    ); // Ajuste conforme seu Enum de comissão
+    );
     const hasCompletedAppointment = plan.appointments.some(
       (a) => a.status === "COMPLETED" || a.status === "CONFIRMED"
     );
@@ -242,9 +254,7 @@ export class TreatmentPlanService {
       );
     }
 
-    // Se passou, deleta tudo (Cascade do Prisma deve cuidar das relações, mas garantimos aqui)
     return prisma.$transaction(async (tx) => {
-      // Opcional: deletar explicitamente para garantir ordem, mas se o schema tiver onDelete: Cascade, basta deletar o plano
       await tx.commissionRecord.deleteMany({ where: { treatmentPlanId: id } });
       await tx.paymentInstallment.deleteMany({
         where: { treatmentPlanId: id },
@@ -253,7 +263,6 @@ export class TreatmentPlanService {
         where: { treatmentPlanId: id },
       });
 
-      // Desvincula agendamentos futuros (não deleta o agendamento, só tira o plano)
       await tx.appointment.updateMany({
         where: { treatmentPlanId: id },
         data: { treatmentPlanId: null, treatmentPlanProcedureId: null },
@@ -264,9 +273,8 @@ export class TreatmentPlanService {
   }
 
   static async list(clinicId: string) {
-    // A listagem pode incluir a contagem de parcelas totais e pagas, se útil
     return prisma.treatmentPlan.findMany({
-      where: { clinicId },
+      where: { clinicId }, // SEGURANÇA
       include: {
         patient: { select: { name: true } },
         seller: { select: { fullName: true } },
@@ -282,7 +290,7 @@ export class TreatmentPlanService {
 
   static async getById(id: string, clinicId: string) {
     return prisma.treatmentPlan.findFirst({
-      where: { id, clinicId },
+      where: { id, clinicId }, // SEGURANÇA
       include: {
         patient: true,
         seller: true,
@@ -291,7 +299,6 @@ export class TreatmentPlanService {
             procedure: true,
           },
         },
-        // Inclui parcelas ordenadas ao buscar detalhes
         paymentInstallments: {
           orderBy: { installmentNumber: "asc" },
         },

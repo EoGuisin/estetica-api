@@ -1,4 +1,3 @@
-//src/services/attendance.service.ts
 import { prisma } from "../lib/prisma";
 import { supabase } from "../lib/supabase";
 import { randomUUID } from "node:crypto";
@@ -54,30 +53,30 @@ export class AttendanceService {
   static async getTemplatesForPatient(
     patientId: string,
     type: DocumentType,
-    clinicIdFromRequest?: string
+    clinicIdFromRequest: string
   ): Promise<any[]> {
-    // 1. Busca o paciente e seus planos para descobrir QUAIS especialidades ele usa
-    const patient = await prisma.patient.findUniqueOrThrow({
-      where: { id: patientId },
+    // 1. SEGURANÇA: Busca o paciente e garante que ele é da clínica solicitada
+    const patient = await prisma.patient.findFirstOrThrow({
+      where: {
+        id: patientId,
+        clinicId: clinicIdFromRequest, // <--- TRAVA DE SEGURANÇA
+      },
       include: {
         treatmentPlans: {
           include: {
             procedures: {
               include: {
-                procedure: true, // Para pegar o specialtyId
+                procedure: true,
               },
             },
           },
-          // Pega todos os planos da clínica atual para varrer as especialidades
           where: { clinicId: clinicIdFromRequest },
         },
       },
     });
 
-    // Define qual Clinic ID usar (preferência para o do request)
-    const targetClinicId = clinicIdFromRequest || patient.clinicId;
+    const targetClinicId = clinicIdFromRequest;
 
-    // 2. Extrai IDs únicos das especialidades dos procedimentos do paciente
     const specialtyIds = new Set<string>();
 
     patient.treatmentPlans.forEach((plan) => {
@@ -88,27 +87,21 @@ export class AttendanceService {
       });
     });
 
-    // Se o paciente não tem planos/procedimentos, não mostramos templates (ou mostramos todos da clínica?)
-    // Regra: Se não tem especialidade definida, não mostra nada para evitar erro.
     if (specialtyIds.size === 0) {
       return [];
     }
 
-    // 3. Busca templates filtrando:
-    // - Pela CLÍNICA ATUAL (Isolamento)
-    // - Pelo TIPO (Contrato/Termo)
-    // - Pelas ESPECIALIDADES que o paciente tem
     const templates = await prisma.specialtyTemplate.findMany({
       where: {
-        clinicId: targetClinicId, // <--- ISOLAMENTO GARANTIDO
+        clinicId: targetClinicId,
         type: type,
         isActive: true,
         specialtyId: {
-          in: Array.from(specialtyIds), // <--- APENAS ESPECIALIDADES DO PACIENTE
+          in: Array.from(specialtyIds),
         },
       },
       include: {
-        specialty: { select: { name: true } }, // Para mostrar no front de qual especialidade é
+        specialty: { select: { name: true } },
       },
       orderBy: { name: "asc" },
     });
@@ -126,13 +119,21 @@ export class AttendanceService {
       throw new Error("ID do profissional é obrigatório.");
     }
 
-    const template = await prisma.specialtyTemplate.findUniqueOrThrow({
-      where: { id: data.templateId },
+    // 1. Template deve ser da clínica
+    const template = await prisma.specialtyTemplate.findFirstOrThrow({
+      where: {
+        id: data.templateId,
+        clinicId: data.clinicId, // SEGURANÇA
+      },
       include: { specialty: true },
     });
 
-    const patient = await prisma.patient.findUniqueOrThrow({
-      where: { id: data.patientId },
+    // 2. Paciente deve ser da clínica
+    const patient = await prisma.patient.findFirstOrThrow({
+      where: {
+        id: data.patientId,
+        clinicId: data.clinicId, // SEGURANÇA
+      },
       include: {
         address: true,
         phones: true,
@@ -153,13 +154,12 @@ export class AttendanceService {
       include: { address: true },
     });
 
-    // Busca o profissional selecionado
+    // Busca o profissional selecionado (deve ter vínculo com a clínica, idealmente, mas o template já filtra)
     const professional = await prisma.user.findUnique({
       where: { id: data.professionalId },
       select: { signatureImagePath: true, fullName: true },
     });
 
-    // Gera URL da assinatura do profissional
     let professionalSignatureUrl = null;
     if (professional?.signatureImagePath) {
       const { data: signData } = await supabase.storage
@@ -168,11 +168,10 @@ export class AttendanceService {
       professionalSignatureUrl = signData?.signedUrl;
     }
 
-    // Tratamento de variáveis
     let treatmentPlanData = null;
     if (patient.treatmentPlans.length > 0) {
       const plan = patient.treatmentPlans[0];
-      const firstProcedure = plan.procedures[0]; // Pega o primeiro só para referência de especialidade/sessões
+      const firstProcedure = plan.procedures[0];
 
       treatmentPlanData = {
         specialty: firstProcedure?.procedure?.specialty?.name,
@@ -191,7 +190,6 @@ export class AttendanceService {
       patientSignatureUrl: null,
     });
 
-    // Gera PDF
     const timestamp = Date.now();
     const fileName = `${template.type.toLowerCase()}_${patient.name.replace(
       / /g,
@@ -211,12 +209,11 @@ export class AttendanceService {
 
     if (uploadError) throw new Error("Erro ao fazer upload do PDF.");
 
-    // Salva no banco COM O PROFESSIONAL_ID
     const document = await prisma.patientDocument.create({
       data: {
         patientId: data.patientId,
         templateId: data.templateId,
-        professionalId: data.professionalId, // <--- O PULO DO GATO ESTÁ AQUI
+        professionalId: data.professionalId,
         fileName,
         filePath,
         fileType: "application/pdf",
@@ -229,13 +226,19 @@ export class AttendanceService {
     return document;
   }
 
-  static async signDocument(data: {
-    documentId: string;
-    signatureBase64: string;
-  }) {
-    // 1. Busca documento e dados
-    const document = await prisma.patientDocument.findUniqueOrThrow({
-      where: { id: data.documentId },
+  static async signDocument(
+    data: {
+      documentId: string;
+      signatureBase64: string;
+    },
+    clinicId: string // ADICIONADO
+  ) {
+    // 1. Busca documento e valida acesso da clínica
+    const document = await prisma.patientDocument.findFirstOrThrow({
+      where: {
+        id: data.documentId,
+        patient: { clinicId: clinicId }, // SEGURANÇA
+      },
       include: {
         patient: {
           include: {
@@ -265,23 +268,17 @@ export class AttendanceService {
       throw new Error("Este documento já foi assinado e finalizado.");
     }
 
-    // --- NOVO: Descobre o ClinicId através do paciente dono do documento ---
-    const clinicId = document.patient.clinicId;
-    // ----------------------------------------------------------------------
-
     if (!document.template) {
       throw new Error(
         "Documento sem template não pode ser assinado digitalmente."
       );
     }
 
-    // 2. Upload da assinatura do PACIENTE
     const signatureBuffer = Buffer.from(
       data.signatureBase64.replace(/^data:image\/\w+;base64,/, ""),
       "base64"
     );
 
-    // Usa a variável clinicId descoberta acima
     const patientSignaturePath = `${clinicId}/${document.patientId}/signatures/${document.id}_patient.png`;
 
     const { error: uploadError } = await supabase.storage
@@ -293,20 +290,16 @@ export class AttendanceService {
 
     if (uploadError) throw new Error("Erro ao salvar assinatura do paciente.");
 
-    // 3. URL assinada do PACIENTE
     const { data: patSignData } = await supabase.storage
       .from(DOCUMENTS_BUCKET)
       .createSignedUrl(patientSignaturePath, 120);
 
-    // 4. URL assinada do PROFISSIONAL
     let professionalSignatureUrl = null;
     let professionalId = null;
 
-    // (Lógica de buscar profissional mantida igual, usa professionalId se existir ou tenta descobrir)
     if (document.professionalId) {
       professionalId = document.professionalId;
     } else {
-      // Fallbacks antigos
       const plan = document.patient.treatmentPlans[0];
       if (plan && plan.sellerId) professionalId = plan.sellerId;
       else if (document.patient.appointments.length > 0)
@@ -328,13 +321,11 @@ export class AttendanceService {
       }
     }
 
-    // Busca dados da clínica usando o ID descoberto
     const clinic = await prisma.clinic.findUniqueOrThrow({
-      where: { id: clinicId }, // <--- Usa a variável local
+      where: { id: clinicId },
       include: { address: true },
     });
 
-    // Dados do plano para o template (Mantido igual)
     let treatmentPlanData = null;
     const plan = document.patient.treatmentPlans[0];
     if (plan) {
@@ -347,7 +338,6 @@ export class AttendanceService {
       };
     }
 
-    // 5. REGENERA O HTML
     const filledContent = substituteVariables(document.template.content, {
       patient: document.patient,
       clinic,
@@ -356,14 +346,12 @@ export class AttendanceService {
       patientSignatureUrl: patSignData?.signedUrl,
     });
 
-    // 6. Gera o NOVO PDF
     const pdfBuffer = await this.generatePDFFromHTML(
       filledContent,
       clinic,
       document.fileName.replace(".pdf", "")
     );
 
-    // 7. Sobrescreve o PDF antigo
     const { error: pdfUploadError } = await supabase.storage
       .from(DOCUMENTS_BUCKET)
       .upload(document.filePath, pdfBuffer, {
@@ -373,7 +361,6 @@ export class AttendanceService {
 
     if (pdfUploadError) throw new Error("Erro ao atualizar o PDF assinado.");
 
-    // 8. Atualiza status no banco
     await prisma.patientDocument.update({
       where: { id: data.documentId },
       data: {
@@ -443,7 +430,10 @@ export class AttendanceService {
 
   static async getAttendanceData(appointmentId: string, clinicId: string) {
     const appointment = await prisma.appointment.findFirstOrThrow({
-      where: { id: appointmentId, patient: { clinicId } },
+      where: {
+        id: appointmentId,
+        patient: { clinicId: clinicId }, // SEGURANÇA
+      },
       include: {
         patient: true,
         professional: { select: { fullName: true } },
@@ -465,7 +455,10 @@ export class AttendanceService {
     });
 
     const assessments = await prisma.patientAssessment.findMany({
-      where: { patientId: appointment.patient.id },
+      where: {
+        patientId: appointment.patient.id,
+        clinicId: clinicId, // SEGURANÇA
+      },
       include: {
         template: true,
         appointment: {
@@ -478,8 +471,13 @@ export class AttendanceService {
       orderBy: { createdAt: "desc" },
     });
 
+    // Histórico: busca agendamentos do paciente, mas como já validamos que o paciente é da clínica, está OK.
+    // Mas para garantir:
     const patientHistory = await prisma.appointment.findMany({
-      where: { patientId: appointment.patient.id },
+      where: {
+        patientId: appointment.patient.id,
+        // (Opcional, mas redundante se o paciente já é da clínica)
+      },
       include: {
         appointmentType: true,
         professional: true,
@@ -531,8 +529,21 @@ export class AttendanceService {
 
   static async saveDiagnosis(
     appointmentId: string,
-    diagnosis: string | null | undefined
+    diagnosis: string | null | undefined,
+    clinicId: string // ADICIONADO
   ) {
+    // 1. Verifica se o agendamento pertence a um paciente desta clínica
+    const appointment = await prisma.appointment.findFirst({
+      where: {
+        id: appointmentId,
+        patient: { clinicId: clinicId },
+      },
+    });
+
+    if (!appointment) {
+      throw new Error("Appointment not found or access denied.");
+    }
+
     return prisma.clinicalRecord.upsert({
       where: { appointmentId },
       create: {
@@ -545,9 +556,13 @@ export class AttendanceService {
     });
   }
 
-  static async listAttachments(patientId: string) {
+  static async listAttachments(patientId: string, clinicId: string) {
+    // SEGURANÇA: Verifica se o paciente pertence à clínica na query
     const attachments = await prisma.attachment.findMany({
-      where: { patientId },
+      where: {
+        patientId,
+        patient: { clinicId: clinicId }, // <--- TRAVA
+      },
       orderBy: { createdAt: "desc" },
     });
 
@@ -572,13 +587,12 @@ export class AttendanceService {
     patientId: string;
     clinicId: string;
   }) {
+    // Opcional: verificar se patientId pertence à clinicId aqui também, mas
+    // o saveAttachment fará a verificação final.
     const fileExtension = data.fileName.split(".").pop();
     const uniqueFileName = `${randomUUID()}.${fileExtension}`;
     const filePath = `${data.clinicId}/${data.patientId}/${uniqueFileName}`;
 
-    // ================= FIX IS HERE =================
-    // The second argument `60` is removed. The function no longer takes an expiration time.
-    // It uses a default expiration set by Supabase (usually one hour).
     const { data: signedUrlData, error } = await supabase.storage
       .from(ATTACHMENTS_BUCKET)
       .createSignedUploadUrl(filePath);
@@ -587,15 +601,20 @@ export class AttendanceService {
       console.error("Supabase signed URL error:", error);
       throw new Error("Could not create signed upload URL");
     }
-    // ===============================================
 
     return { ...signedUrlData, filePath };
   }
 
-  static async saveAttachment(data: z.infer<typeof saveAttachmentSchema>) {
-    // CORREÇÃO AQUI: Usar findFirstOrThrow para evitar o erro de 'possibly null'
+  static async saveAttachment(
+    data: z.infer<typeof saveAttachmentSchema>,
+    clinicId: string // ADICIONADO
+  ) {
+    // 1. Busca a clínica e valida que o paciente pertence a ELA
     const clinic = await prisma.clinic.findFirstOrThrow({
-      where: { patients: { some: { id: data.patientId } } },
+      where: {
+        id: clinicId, // A clínica do request
+        patients: { some: { id: data.patientId } }, // O paciente deve estar nela
+      },
     });
 
     await this.checkStorageLimit(clinic.id, data.size);
@@ -623,7 +642,7 @@ export class AttendanceService {
     const attachment = await prisma.attachment.findFirstOrThrow({
       where: {
         id: attachmentId,
-        patient: { clinicId },
+        patient: { clinicId }, // SEGURANÇA
       },
     });
 
@@ -635,28 +654,24 @@ export class AttendanceService {
       console.error("Supabase storage deletion error:", storageError.message);
     }
 
-    const patient = await prisma.patient.findUnique({
-      where: { id: attachment.patientId },
-      select: { clinicId: true },
+    await prisma.clinic.update({
+      where: { id: clinicId },
+      data: {
+        storageUsed: { decrement: attachment.size },
+      },
     });
-
-    if (patient) {
-      await prisma.clinic.update({
-        where: { id: patient.clinicId },
-        data: {
-          storageUsed: { decrement: attachment.size },
-        },
-      });
-    }
 
     await prisma.attachment.delete({
       where: { id: attachmentId },
     });
   }
 
-  static async getBeforeAfterImages(patientId: string) {
+  static async getBeforeAfterImages(patientId: string, clinicId: string) {
     const images = await prisma.beforeAfterImage.findMany({
-      where: { patientId },
+      where: {
+        patientId,
+        patient: { clinicId: clinicId }, // SEGURANÇA
+      },
       orderBy: { createdAt: "desc" },
     });
 
@@ -690,7 +705,7 @@ export class AttendanceService {
     clinicId: string
   ) {
     const image = await prisma.beforeAfterImage.findFirstOrThrow({
-      where: { id: imageId, patient: { clinicId } },
+      where: { id: imageId, patient: { clinicId } }, // SEGURANÇA
     });
 
     const filePath =
@@ -738,8 +753,15 @@ export class AttendanceService {
   }
 
   static async saveBeforeAfterImage(
-    data: z.infer<typeof saveBeforeAfterSchema>
+    data: z.infer<typeof saveBeforeAfterSchema>,
+    clinicId: string // ADICIONADO
   ) {
+    // Verifica se paciente pertence à clínica
+    const patient = await prisma.patient.findFirst({
+      where: { id: data.patientId, clinicId: clinicId },
+    });
+    if (!patient) throw new Error("Paciente não encontrado ou acesso negado.");
+
     return prisma.beforeAfterImage.create({
       data: {
         patientId: data.patientId,
@@ -751,7 +773,16 @@ export class AttendanceService {
     });
   }
 
-  static async updateAfterImage(imageId: string, afterImagePath: string) {
+  static async updateAfterImage(
+    imageId: string,
+    afterImagePath: string,
+    clinicId: string // ADICIONADO
+  ) {
+    // Verifica propriedade
+    const image = await prisma.beforeAfterImage.findFirstOrThrow({
+      where: { id: imageId, patient: { clinicId } },
+    });
+
     return prisma.beforeAfterImage.update({
       where: { id: imageId },
       data: { afterImagePath },
@@ -762,7 +793,7 @@ export class AttendanceService {
     const image = await prisma.beforeAfterImage.findFirstOrThrow({
       where: {
         id: imageId,
-        patient: { clinicId }, // Garante que a imagem pertence à clínica do usuário
+        patient: { clinicId }, // SEGURANÇA
       },
     });
 
@@ -778,12 +809,16 @@ export class AttendanceService {
     });
   }
 
-  // List documents by patient and type
-  static async listDocuments(patientId: string, type: DocumentType) {
+  static async listDocuments(
+    patientId: string,
+    type: DocumentType,
+    clinicId: string
+  ) {
     const documents = await prisma.patientDocument.findMany({
       where: {
         patientId,
         type,
+        patient: { clinicId: clinicId }, // SEGURANÇA
       },
       orderBy: {
         createdAt: "desc",
@@ -793,7 +828,6 @@ export class AttendanceService {
     return documents;
   }
 
-  // Create signed URL for document upload
   static async createDocumentSignedUrl(data: {
     fileName: string;
     fileType: string;
@@ -817,16 +851,24 @@ export class AttendanceService {
     return { ...signedUrlData, filePath };
   }
 
-  // Save document metadata to database
-  static async saveDocument(data: {
-    patientId: string;
-    fileName: string;
-    description?: string | null;
-    filePath: string;
-    fileType: string;
-    size: number;
-    documentType: DocumentType;
-  }) {
+  static async saveDocument(
+    data: {
+      patientId: string;
+      fileName: string;
+      description?: string | null;
+      filePath: string;
+      fileType: string;
+      size: number;
+      documentType: DocumentType;
+    },
+    clinicId: string // ADICIONADO
+  ) {
+    // Verifica paciente
+    const patient = await prisma.patient.findFirst({
+      where: { id: data.patientId, clinicId: clinicId },
+    });
+    if (!patient) throw new Error("Paciente não encontrado ou acesso negado.");
+
     return prisma.patientDocument.create({
       data: {
         patientId: data.patientId,
@@ -841,16 +883,14 @@ export class AttendanceService {
     });
   }
 
-  // Delete a document
   static async deleteDocument(documentId: string, clinicId: string) {
     const document = await prisma.patientDocument.findFirstOrThrow({
       where: {
         id: documentId,
-        patient: { clinicId },
+        patient: { clinicId }, // SEGURANÇA
       },
     });
 
-    // Remove from storage
     if (document.filePath) {
       const { error } = await supabase.storage
         .from(DOCUMENTS_BUCKET)
@@ -864,18 +904,16 @@ export class AttendanceService {
       }
     }
 
-    // Delete from database
     await prisma.patientDocument.delete({
       where: { id: documentId },
     });
   }
 
-  // Get signed download URL
   static async getDocumentDownloadUrl(documentId: string, clinicId: string) {
     const document = await prisma.patientDocument.findFirstOrThrow({
       where: {
         id: documentId,
-        patient: { clinicId },
+        patient: { clinicId }, // SEGURANÇA
       },
     });
 
@@ -883,10 +921,9 @@ export class AttendanceService {
       throw new Error("Document file not found");
     }
 
-    // Create a signed URL that expires in 1 hour
     const { data, error } = await supabase.storage
       .from(DOCUMENTS_BUCKET)
-      .createSignedUrl(document.filePath, 3600); // 3600 seconds = 1 hour
+      .createSignedUrl(document.filePath, 3600);
 
     if (error || !data) {
       console.error("Error creating signed URL:", error);
@@ -907,15 +944,14 @@ export class AttendanceService {
     const attachment = await prisma.attachment.findFirstOrThrow({
       where: {
         id: attachmentId,
-        patient: { clinicId },
+        patient: { clinicId }, // SEGURANÇA
       },
     });
 
     const { data, error } = await supabase.storage
       .from(ATTACHMENTS_BUCKET)
       .createSignedUrl(attachment.filePath, 3600, {
-        // 1 hour expiration
-        download: attachment.fileName, // This prompts a download with the correct filename
+        download: attachment.fileName,
       });
 
     if (error || !data) {

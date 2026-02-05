@@ -1,4 +1,3 @@
-// src/services/cashRegister.service.ts
 import { prisma } from "../lib/prisma";
 import { CashRegisterSessionStatus, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
@@ -13,7 +12,7 @@ export class CashRegisterService {
     bankAccountId: string,
     observedOpening: number
   ) {
-    // 1. Verifica se já existe uma sessão aberta para esta conta
+    // 1. Verifica se já existe uma sessão aberta para esta conta NA CLÍNICA ATUAL
     const existingOpenSession = await prisma.cashRegisterSession.findFirst({
       where: { bankAccountId, status: "OPEN", clinicId },
     });
@@ -22,6 +21,7 @@ export class CashRegisterService {
     }
 
     // 2. Busca o saldo atual real da conta no banco de dados
+    // SEGURANÇA: Garante que a conta pertence à clínica
     const bankAccount = await prisma.bankAccount.findFirstOrThrow({
       where: { id: bankAccountId, clinicId },
     });
@@ -37,7 +37,7 @@ export class CashRegisterService {
         status: CashRegisterSessionStatus.OPEN,
       },
       include: {
-        bankAccount: { select: { id: true, name: true } }, // Garantir ID aqui também
+        bankAccount: { select: { id: true, name: true } },
         openedByUser: { select: { fullName: true } },
       },
     });
@@ -56,16 +56,18 @@ export class CashRegisterService {
     notes: string | null | undefined
   ) {
     // 1. Encontra a sessão que deve ser fechada
+    // SEGURANÇA: Garante que a sessão pertence à clínica
     const session = await prisma.cashRegisterSession.findFirstOrThrow({
       where: { id: sessionId, clinicId, status: "OPEN" },
     });
 
-    // 2. Busca o saldo atualizado da conta (que reflete todas as transações)
+    // 2. Busca o saldo atualizado da conta
+    // SEGURANÇA: Garante que a conta pertence à clínica (redundante mas bom)
     const bankAccount = await prisma.bankAccount.findFirstOrThrow({
-      where: { id: session.bankAccountId },
+      where: { id: session.bankAccountId, clinicId },
     });
 
-    const closingBalance = bankAccount.balance; // Saldo real do sistema
+    const closingBalance = bankAccount.balance;
     const observedClosingDecimal = new Decimal(observedClosing.toFixed(2));
     const discrepancy = observedClosingDecimal.sub(closingBalance);
 
@@ -93,16 +95,16 @@ export class CashRegisterService {
     const session = await prisma.cashRegisterSession.findFirst({
       where: { clinicId, bankAccountId, status: "OPEN" },
       include: {
-        bankAccount: { select: { id: true, name: true, balance: true } }, // Garantir ID aqui
+        bankAccount: { select: { id: true, name: true, balance: true } },
         openedByUser: { select: { fullName: true } },
       },
     });
 
     if (!session) {
       // Se não houver sessão aberta, retorna o status da conta para o front-end
+      // SEGURANÇA: Só retorna se a conta for desta clínica
       const bankAccount = await prisma.bankAccount.findFirst({
         where: { id: bankAccountId, clinicId },
-        // --- CORREÇÃO APLICADA AQUI ---
         select: { id: true, name: true, balance: true },
       });
       return { session: null, bankAccount };
@@ -116,6 +118,7 @@ export class CashRegisterService {
    * incluindo todas as transações financeiras vinculadas.
    */
   static async getSessionDetails(clinicId: string, sessionId: string) {
+    // SEGURANÇA: Garante que a sessão pertence à clínica
     const session = await prisma.cashRegisterSession.findFirstOrThrow({
       where: { id: sessionId, clinicId },
       include: {
@@ -145,7 +148,6 @@ export class CashRegisterService {
       },
     });
 
-    // Calcula os totais da sessão
     const totals = session.transactions.reduce(
       (acc, tx) => {
         if (tx.type === "REVENUE") {
@@ -178,7 +180,7 @@ export class CashRegisterService {
       bankAccountId?: string;
     }
   ) {
-    const where: Prisma.CashRegisterSessionWhereInput = { clinicId };
+    const where: Prisma.CashRegisterSessionWhereInput = { clinicId }; // TRAVA DE SEGURANÇA
 
     if (filters.status) where.status = filters.status;
     if (filters.bankAccountId) where.bankAccountId = filters.bankAccountId;

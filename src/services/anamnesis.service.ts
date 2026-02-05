@@ -130,7 +130,6 @@ export class AnamnesisService {
     clinicId: string,
     data: UpdateTemplateInput
   ) {
-    // 1. Buscamos o template e verificamos se ele já foi usado
     const template = await prisma.anamnesisTemplate.findFirst({
       where: { id, clinicId },
       include: {
@@ -159,17 +158,15 @@ export class AnamnesisService {
           },
         });
 
-        // B. Cria o NOVO template (A nova versão ativa)
         const newTemplate = await tx.anamnesisTemplate.create({
           data: {
             name: templateData.name || template.name,
             description: templateData.description ?? template.description,
-            isActive: templateData.isActive ?? true, // O novo nasce ativo (ou conforme o form)
+            isActive: templateData.isActive ?? true,
             clinicId,
           },
         });
 
-        // C. Recria as seções e perguntas no NOVO template
         for (const section of sections) {
           const { questions, ...sectionData } = section;
 
@@ -177,7 +174,7 @@ export class AnamnesisService {
             data: {
               title: sectionData.title,
               order: sectionData.order,
-              templateId: newTemplate.id, // Vincula ao NOVO ID
+              templateId: newTemplate.id,
             },
           });
 
@@ -191,23 +188,17 @@ export class AnamnesisService {
           }
         }
 
-        return newTemplate; // Retorna o novo objeto
+        return newTemplate;
       });
     }
 
-    // 3. Se NÃO foi usado AINDA, ou se não estamos mexendo na estrutura (só renomeando),
-    // podemos usar a lógica antiga de substituir (Safe Update ou Overwrite)
-
     return prisma.$transaction(async (tx) => {
-      // Atualiza dados básicos
       const updatedTemplate = await tx.anamnesisTemplate.update({
         where: { id },
         data: templateData,
       });
 
-      // Se enviou seções novas e NÃO tem uso, podemos apagar e recriar (lógica antiga)
       if (sections && !hasAssessments) {
-        // Aqui é seguro fazer deleteMany pois não tem AssessmentResponse vinculado
         await tx.anamnesisSection.deleteMany({
           where: { templateId: id },
         });
@@ -305,13 +296,18 @@ export class AnamnesisService {
     clinicId: string,
     data: CreateAssessmentInput
   ) {
-    const appointment = await prisma.appointment.findUnique({
-      where: { id: appointmentId },
+    // 1. Verificação de segurança: O agendamento pertence a um paciente desta clínica?
+    // Usamos findFirst com filtro no patient.clinicId
+    const appointment = await prisma.appointment.findFirst({
+      where: {
+        id: appointmentId,
+        patient: { clinicId: clinicId }, // SEGURANÇA AQUI
+      },
       select: { patientId: true },
     });
 
     if (!appointment) {
-      throw new Error("Appointment not found");
+      throw new Error("Appointment not found or access denied.");
     }
 
     return prisma.patientAssessment.upsert({
@@ -345,9 +341,16 @@ export class AnamnesisService {
     });
   }
 
-  static async getAssessmentByAppointment(appointmentId: string) {
-    const appointment = await prisma.appointment.findUnique({
-      where: { id: appointmentId },
+  // 2. Recebe clinicId para garantir isolamento
+  static async getAssessmentByAppointment(
+    appointmentId: string,
+    clinicId: string
+  ) {
+    const appointment = await prisma.appointment.findFirst({
+      where: {
+        id: appointmentId,
+        patient: { clinicId: clinicId }, // SEGURANÇA AQUI
+      },
       include: {
         patient: true,
         appointmentType: true,
@@ -377,7 +380,7 @@ export class AnamnesisService {
     });
 
     if (!appointment) {
-      throw new Error("Appointment not found");
+      throw new Error("Appointment not found or access denied.");
     }
 
     const responsesMap = appointment.assessment
@@ -389,32 +392,28 @@ export class AnamnesisService {
 
     let template = appointment.assessment?.template;
     if (!template) {
-      // CORREÇÃO: Pegamos o clinicId do PACIENTE, não do profissional
-      const clinicId = appointment.patient.clinicId;
-
-      if (clinicId) {
-        const foundTemplate = await prisma.anamnesisTemplate.findFirst({
-          where: {
-            clinicId: clinicId,
-            isActive: true,
-          },
-          include: {
-            sections: {
-              orderBy: { order: "asc" },
-              include: {
-                questions: {
-                  where: { parentQuestionId: null },
-                  orderBy: { order: "asc" },
-                  include: {
-                    subQuestions: true,
-                  },
+      // Usa o clinicId passado e validado
+      const foundTemplate = await prisma.anamnesisTemplate.findFirst({
+        where: {
+          clinicId: clinicId, // SEGURANÇA: Usa o ID validado
+          isActive: true,
+        },
+        include: {
+          sections: {
+            orderBy: { order: "asc" },
+            include: {
+              questions: {
+                where: { parentQuestionId: null },
+                orderBy: { order: "asc" },
+                include: {
+                  subQuestions: true,
                 },
               },
             },
           },
-        });
-        template = foundTemplate ?? undefined;
-      }
+        },
+      });
+      template = foundTemplate ?? undefined;
     }
 
     return {
@@ -434,9 +433,12 @@ export class AnamnesisService {
     };
   }
 
-  static async listPatientAssessments(patientId: string) {
+  static async listPatientAssessments(patientId: string, clinicId: string) {
     return prisma.patientAssessment.findMany({
-      where: { patientId },
+      where: {
+        patientId,
+        clinicId: clinicId, // SEGURANÇA: Filtra pela clínica atual
+      },
       include: {
         appointment: {
           select: {
@@ -452,9 +454,13 @@ export class AnamnesisService {
     });
   }
 
-  static async getAssessmentById(id: string) {
-    const assessment = await prisma.patientAssessment.findUnique({
-      where: { id },
+  static async getAssessmentById(id: string, clinicId: string) {
+    // findFirst para poder usar o clinicId no where
+    const assessment = await prisma.patientAssessment.findFirst({
+      where: {
+        id,
+        clinicId: clinicId, // SEGURANÇA: Filtra pela clínica atual
+      },
       include: {
         template: { select: { name: true } },
         responses: {
