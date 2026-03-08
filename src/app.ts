@@ -57,10 +57,10 @@ app.register(multipart, {
 app.register(cors, {
   origin: [
     "http://localhost:3001",
-    "https://www.belliun.com.br",
-    "https://belliun.com.br",
-    "https://app.belliun.com.br",
-    "https://www.app.belliun.com.br",
+    "https://www.bellflow.com.br",
+    "https://bellflow.com.br",
+    "https://app.bellflow.com.br",
+    "https://www.app.bellflow.com.br",
   ],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   credentials: true,
