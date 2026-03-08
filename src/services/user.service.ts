@@ -60,9 +60,19 @@ export class UserService {
       specialtyIds,
       password,
       signatureImagePath,
-      clinicIds, // Certifique-se que o frontend manda isso
+      clinicIds,
       ...userData
     } = data;
+
+    const targetClinicIds = clinicIds ? Array.from(new Set(clinicIds)) : [];
+
+    // Validação de segurança opcional: impedir criar usuário sem nenhuma clínica
+    if (targetClinicIds.length === 0) {
+      throw new Error(
+        "É necessário vincular o usuário a pelo menos uma clínica."
+      );
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
 
     const emailExists = await prisma.user.findUnique({
@@ -78,8 +88,7 @@ export class UserService {
         ...userData,
         passwordHash,
         clinics: {
-          // Conecta as clínicas selecionadas + a clínica atual (opcional, mas recomendado para garantir acesso onde foi criado)
-          connect: clinicIds.map((id: string) => ({ id })),
+          connect: targetClinicIds.map((id: any) => ({ id: String(id) })),
         },
         signatureImagePath: signatureImagePath || null,
         specialties: {
@@ -104,9 +113,11 @@ export class UserService {
     const ownerId = clinic?.account?.ownerId;
 
     const where: Prisma.UserWhereInput = {
-      clinics: {
-        some: { id: clinicId },
-      },
+      OR: [
+        { clinics: { some: { id: clinicId } } }, // Usuários vinculados a ESTA clínica
+        { id: ownerId }, // Ou o dono da conta
+      ],
+      AND: [],
     };
 
     if (name) {
@@ -216,7 +227,7 @@ export class UserService {
       data: {
         ...userData,
         signatureImagePath: signatureImagePath,
-        // Atualiza as relações N:N
+        // Atualiza as relações N:N com base no que veio do front
         clinics:
           clinicIds === undefined
             ? undefined

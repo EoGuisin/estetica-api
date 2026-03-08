@@ -208,25 +208,64 @@ export class AuthService {
 
     if (user) {
       const token = crypto.randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + 3600000); // 1 hora
+      const expiresAt = new Date(Date.now() + 3600000); // 1 hour
 
       await prisma.passwordResetToken.create({
-        data: {
-          userId: user.id,
-          token,
-          expiresAt,
-        },
+        data: { userId: user.id, token, expiresAt },
       });
 
       const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
 
-      await resend.emails.send({
+      const { error } = await resend.emails.send({
         from: "Belliun <nao-responda@belliun.com.br>",
         to: user.email,
         subject: "Redefinição de Senha - Belliun",
-        html: `<p>Olá ${user.fullName},</p><p>Clique no link para redefinir sua senha:</p><a href="${resetLink}">Redefinir Senha</a>`,
+        html: `
+          <div style="font-family: sans-serif; line-height: 1.5; color: #333; background-color: #f4f4f5; padding: 40px 20px;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 40px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+              
+              <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #000; font-size: 24px; font-weight: bold; margin: 0;">Belliun</h1>
+              </div>
+
+              <p style="font-size: 16px; margin-bottom: 20px;">Olá, <strong>${
+                user.fullName
+              }</strong>.</p>
+              
+              <p style="font-size: 16px; color: #555; margin-bottom: 30px;">
+                Recebemos uma solicitação para redefinir a senha da sua conta. Se foi você quem solicitou, clique no botão abaixo para criar uma nova senha:
+              </p>
+
+              <div style="text-align: center; margin-bottom: 30px;">
+                <a href="${resetLink}" style="display: inline-block; background-color: #000000; color: #ffffff; padding: 14px 28px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
+                  Redefinir Minha Senha
+                </a>
+              </div>
+
+              <p style="font-size: 14px; color: #888; margin-bottom: 10px;">
+                Este link expira em <strong>1 hora</strong>.
+              </p>
+              <p style="font-size: 14px; color: #888; margin-bottom: 0;">
+                Se você não fez essa solicitação, pode ignorar este e-mail com segurança. Sua senha permanecerá a mesma.
+              </p>
+
+              <hr style="border: none; border-top: 1px solid #eaeaea; margin: 40px 0 20px 0;" />
+
+              <div style="text-align: center; font-size: 12px; color: #999;">
+                <p style="margin: 0;">© ${new Date().getFullYear()} Belliun. Todos os direitos reservados.</p>
+              </div>
+
+            </div>
+          </div>
+        `,
       });
+
+      if (error) {
+        console.error("ERRO RESEND:", error);
+        throw new Error(`Falha ao enviar email: ${error.message}`);
+      }
     }
+
     return {
       message:
         "Se um usuário com este email existir, um link de redefinição foi enviado.",
