@@ -773,6 +773,10 @@ model PatientDocument {
   signedAt             DateTime?
   signatureToken       String?        @default(uuid())
 
+  ipAddress    String? // Guarda o IP de quem assinou
+  userAgent    String? // Guarda o navegador/dispositivo
+  documentHash String? // Hash criptográfico SHA-256 do PDF final para provar integridade
+
   professionalId String?
   professional   User?   @relation(fields: [professionalId], references: [id])
 

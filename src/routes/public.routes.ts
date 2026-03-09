@@ -6,4 +6,6 @@ export async function publicRoutes(app: FastifyInstance) {
     "/attendance/documents/:documentId/sign",
     AttendanceController.signDocument
   );
+
+  app.post("/validate-document", AttendanceController.validatePublicDocument);
 }

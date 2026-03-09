@@ -282,20 +282,47 @@ export class AttendanceController {
   }
 
   static async signDocument(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request; // ADICIONADO
     const { documentId } = documentParamsSchema.parse(request.params);
     const { signature } = signDocumentBodySchema.parse(request.body);
 
-    await AttendanceService.signDocument(
-      {
-        documentId,
-        signatureBase64: signature,
-      },
-      clinicId // PASSADO PARA O SERVICE
-    );
+    const ipAddress =
+      request.ip ||
+      (request.headers["x-forwarded-for"] as string) ||
+      "IP desconhecido";
+    const userAgent =
+      request.headers["user-agent"] || "Dispositivo desconhecido";
+
+    // Removemos a necessidade de passar o clinicId da request
+    await AttendanceService.signDocument({
+      documentId,
+      signatureBase64: signature,
+      ipAddress,
+      userAgent,
+    });
 
     return reply
       .status(200)
-      .send({ message: "Documento assinado com sucesso." });
+      .send({
+        message: "Documento assinado com sucesso com validade jurídica.",
+      });
+  }
+
+  // --- ADICIONE ESTE NOVO MÉTODO ---
+  static async validatePublicDocument(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const data = await request.file();
+
+    if (!data) {
+      return reply.status(400).send({ message: "Nenhum arquivo enviado." });
+    }
+
+    const buffer = await data.toBuffer();
+
+    // Chama o service para comparar o Hash
+    const result = await AttendanceService.validateDocumentIntegrity(buffer);
+
+    return reply.send(result);
   }
 }

@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma";
 import { supabase } from "../lib/supabase";
 import { randomUUID } from "node:crypto";
+import crypto from "crypto";
 import {
   saveAttachmentSchema,
   saveBeforeAfterSchema,
@@ -232,19 +233,16 @@ export class AttendanceService {
     return document;
   }
 
-  static async signDocument(
-    data: {
-      documentId: string;
-      signatureBase64: string;
-    },
-    clinicId: string // ADICIONADO
-  ) {
-    // 1. Busca documento e valida acesso da clínica
-    const document = await prisma.patientDocument.findFirstOrThrow({
-      where: {
-        id: data.documentId,
-        patient: { clinicId: clinicId }, // SEGURANÇA
-      },
+  // --- ATUALIZE O MÉTODO signDocument ---
+  static async signDocument(data: {
+    documentId: string;
+    signatureBase64: string;
+    ipAddress: string;
+    userAgent: string;
+  }) {
+    // 1. Busca documento (Sem precisar do clinicId da request, pois é uma rota pública)
+    const document = await prisma.patientDocument.findUniqueOrThrow({
+      where: { id: data.documentId },
       include: {
         patient: {
           include: {
@@ -269,6 +267,9 @@ export class AttendanceService {
         template: true,
       },
     });
+
+    // Pega o clinicId que descobrimos através do paciente
+    const clinicId = document.patient.clinicId;
 
     if (document.status === "SIGNED") {
       throw new Error("Este documento já foi assinado e finalizado.");
@@ -344,19 +345,59 @@ export class AttendanceService {
       };
     }
 
-    const filledContent = substituteVariables(document.template.content, {
-      patient: document.patient,
-      clinic,
-      treatmentPlan: treatmentPlanData,
-      professionalSignatureUrl,
-      patientSignatureUrl: patSignData?.signedUrl,
+    const dataHoraAssinatura = new Date().toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
     });
+
+    const auditTrailHtml = `
+      <div style="page-break-before: always; font-family: Arial, sans-serif; font-size: 11px; color: #333; padding: 20px; border: 1px solid #ddd; background-color: #fcfcfc; border-radius: 4px;">
+        <h3 style="margin-top: 0; color: #2c3e50; border-bottom: 1px solid #ccc; padding-bottom: 5px;">Trilha de Auditoria - Assinatura Eletrônica Avançada</h3>
+        <p style="margin-bottom: 15px;">Este documento foi assinado eletronicamente em conformidade com a <strong>Lei nº 14.063/2020</strong>, possuindo validade jurídica.</p>
+        
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+          <tr>
+            <td style="padding: 5px 0; width: 30%;"><strong>ID do Documento:</strong></td>
+            <td>${document.id}</td>
+          </tr>
+          <tr>
+            <td style="padding: 5px 0;"><strong>Paciente Assinante:</strong></td>
+            <td>${document.patient.name} (CPF: ${document.patient.cpf})</td>
+          </tr>
+          <tr>
+            <td style="padding: 5px 0;"><strong>Data e Hora:</strong></td>
+            <td>${dataHoraAssinatura} (Horário de Brasília)</td>
+          </tr>
+          <tr>
+            <td style="padding: 5px 0;"><strong>Endereço IP:</strong></td>
+            <td>${data.ipAddress}</td>
+          </tr>
+          <tr>
+            <td style="padding: 5px 0;"><strong>Dispositivo/Browser:</strong></td>
+            <td>${data.userAgent}</td>
+          </tr>
+        </table>
+      </div>
+    `;
+
+    const filledContent =
+      substituteVariables(document.template.content, {
+        patient: document.patient,
+        clinic,
+        treatmentPlan: treatmentPlanData,
+        professionalSignatureUrl,
+        patientSignatureUrl: patSignData?.signedUrl,
+      }) + auditTrailHtml;
 
     const pdfBuffer = await this.generatePDFFromHTML(
       filledContent,
       clinic,
       document.fileName.replace(".pdf", "")
     );
+
+    const documentHash = crypto
+      .createHash("sha256")
+      .update(pdfBuffer)
+      .digest("hex");
 
     const { error: pdfUploadError } = await supabase.storage
       .from(DOCUMENTS_BUCKET)
@@ -374,10 +415,54 @@ export class AttendanceService {
         signedAt: new Date(),
         patientSignaturePath: patientSignaturePath,
         size: pdfBuffer.length,
+        ipAddress: data.ipAddress,
+        userAgent: data.userAgent,
+        documentHash: documentHash,
       },
     });
 
-    return { success: true };
+    return { success: true, hash: documentHash };
+  }
+
+  // --- ADICIONE ESTE NOVO MÉTODO LOGO ABAIXO ---
+  static async validateDocumentIntegrity(fileBuffer: Buffer) {
+    const fileHash = crypto
+      .createHash("sha256")
+      .update(fileBuffer)
+      .digest("hex");
+
+    const document = await prisma.patientDocument.findFirst({
+      where: {
+        documentHash: fileHash,
+        status: "SIGNED",
+      },
+      include: {
+        patient: {
+          include: {
+            clinic: true,
+          },
+        },
+      },
+    });
+
+    if (!document) {
+      return { valid: false };
+    }
+
+    return {
+      valid: true,
+      documentData: {
+        // CORREÇÃO AQUI: Acessando a clínica através do paciente
+        clinicName: document.patient.clinic.name,
+        clinicTaxId: document.patient.clinic.taxId,
+        patientName: document.patient.name,
+        patientCpf: document.patient.cpf,
+        signedAt: document.signedAt,
+        ipAddress: document.ipAddress,
+        userAgent: document.userAgent,
+        hash: document.documentHash,
+      },
+    };
   }
 
   private static async generatePDFFromHTML(
