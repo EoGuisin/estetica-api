@@ -2,70 +2,70 @@
 
 export const STRIPE_PLANS = {
   ESSENTIAL: {
-    productId: "prod_Tmta0Ivq0JuL3B",
+    productId: "prod_U2EE7G0TzQr2I5",
     name: "Plano Essencial",
     prices: {
-      MONTHLY: "price_1SpJnQ98FBliezJxOCLkHyqt",
-      YEARLY: "price_1SpMGb98FBliezJx6kFf13E9",
+      MONTHLY: "price_1T49mD4yl3Sv3EJgpsUkyQS5",
+      YEARLY: "price_1T49mC4yl3Sv3EJg4GPWTZ04",
     },
   },
   EXPERTS: {
-    productId: "prod_TmtnXmlqdFR6D8",
+    productId: "prod_U2EEIJgNmix1JE",
     name: "Plano Experts",
     prices: {
-      MONTHLY: "price_1SpJzv98FBliezJxT7Tndnl0",
-      YEARLY: "price_1SpMHH98FBliezJx2qEilGfa",
+      MONTHLY: "price_1T49mD4yl3Sv3EJgf7D9CNh6",
+      YEARLY: "price_1T49mB4yl3Sv3EJgu8bdb7ZG",
     },
   },
 };
 
 export const STRIPE_ADDONS = {
   APP: {
-    productId: "prod_TmuWS32TTYJX7I",
+    productId: "prod_U2EEsRU9L8IFdm",
     name: "Aplicativo para Visualização de Agenda",
     prices: {
-      MONTHLY: "price_1SpKhY98FBliezJxwH4qfmOS",
-      YEARLY: "price_1SpMVW98FBliezJxqj4qondA", // <--- Preencha após criar
+      MONTHLY: "price_1T49mD4yl3Sv3EJgWye0TMWr",
+      YEARLY: "price_1T49mD4yl3Sv3EJgVvoYq3S4", // <--- Preencha após criar
     },
   },
   FUNNEL: {
-    productId: "prod_TmuW6TqpBv19J1",
+    productId: "prod_U2EE2TrjHYJkFE",
     name: "Funil de Vendas",
     prices: {
-      MONTHLY: "price_1SpKh098FBliezJxtFvrxyEQ",
-      YEARLY: "price_1SpMUa98FBliezJxUYrGf0h6",
+      MONTHLY: "price_1T49mE4yl3Sv3EJgXWGZaYZJ",
+      YEARLY: "price_1T49mE4yl3Sv3EJg78Vm0rKI",
     },
   },
   IA: {
-    productId: "prod_TmuVPm3gYsg2OD",
+    productId: "prod_U2EEFCmFQm3dQg",
     name: "Módulo IA (Belliun AI)",
     prices: {
-      MONTHLY: "price_1SpKgW98FBliezJxb5KTqew9",
-      YEARLY: "price_1SpMWP98FBliezJxz7dP6ww9",
+      MONTHLY: "price_1T49mE4yl3Sv3EJg9hYIq3kC",
+      YEARLY: "price_1T49mD4yl3Sv3EJgq2YxGFlb",
     },
   },
   CRM_WHATS_FUNNEL: {
-    productId: "prod_TmuVt9EChQe5Gm",
+    productId: "prod_U2EEGlaxCqGTxE",
     name: "CRM + Integração WhatsApp + Funil de Vendas",
     prices: {
-      MONTHLY: "price_1SpKgB98FBliezJxW35bfs9S",
-      YEARLY: "price_1SpMX998FBliezJx7SJxmXLj",
+      MONTHLY: "price_1T49mC4yl3Sv3EJg7O28hJq6",
+      YEARLY: "price_1T49mB4yl3Sv3EJguEz7Kx8S",
     },
   },
   PACK_5_USERS: {
-    productId: "prod_TmuUQ3DEOXj6XF",
+    productId: "prod_U2EE3LKfqCVu4p",
     name: "Pacote +5 Usuários",
     prices: {
-      MONTHLY: "price_1SpKfb98FBliezJxJPJ2uzew",
-      YEARLY: "price_1SpMXd98FBliezJxj9BOTbB4",
+      MONTHLY: "price_1T49mC4yl3Sv3EJgicKyuhCw",
+      YEARLY: "price_1T49mC4yl3Sv3EJgIDemb6tj",
     },
   },
   ADDITIONAL_USER: {
-    productId: "prod_TmuUfcZNLM2cZU",
+    productId: "prod_U2EEco9TQANtNy",
     name: "Usuário Adicional (Unitário)",
     prices: {
-      MONTHLY: "price_1SpKfA98FBliezJxDLSvDWK3",
-      YEARLY: "price_1SpMY698FBliezJxks2Uw0r1",
+      MONTHLY: "price_1T49mC4yl3Sv3EJgYzfmYY4n",
+      YEARLY: "price_1T49mC4yl3Sv3EJgkMV9ppdo",
     },
   },
 };
