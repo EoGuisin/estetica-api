@@ -1,4 +1,4 @@
-name: Deploy API Belliun
+name: Deploy API Bellflow
 
 on:
   push:
@@ -24,5 +24,4 @@ jobs:
             npx prisma generate
             rm -rf dist
             npm run build
-            # Tenta reiniciar. Se o processo não existir, inicia do zero com o caminho correto.
             pm2 start dist/server.js --name belliun-api --update-env || pm2 restart belliun-api --update-env
