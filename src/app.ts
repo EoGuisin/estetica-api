@@ -39,6 +39,7 @@ import { accountRoutes } from "./routes/account.routes";
 import { publicRoutes } from "./routes/public.routes";
 import { webhookRoutes } from "./routes/webhook.routes";
 import { subscriptionRoutes } from "./routes/subscription.routes";
+import { adminRoutes } from "./routes/admin.routes";
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -74,7 +75,7 @@ app.get("/", () => {
 
 app.register(authRoutes, { prefix: "/auth" });
 app.register(publicRoutes);
-
+app.register(adminRoutes, { prefix: "/admin" });
 app.register(async (app: FastifyInstance) => {
   app.addHook("preHandler", authMiddleware);
   app.register(accountRoutes, { prefix: "/account" });
