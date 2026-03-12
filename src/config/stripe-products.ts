@@ -25,7 +25,7 @@ export const STRIPE_ADDONS = {
     name: "Aplicativo para Visualização de Agenda",
     prices: {
       MONTHLY: "price_1T49mD4yl3Sv3EJgWye0TMWr",
-      YEARLY: "price_1T49mD4yl3Sv3EJgVvoYq3S4", // <--- Preencha após criar
+      YEARLY: "price_1T49mD4yl3Sv3EJgVvoYq3S4",
     },
   },
   FUNNEL: {
