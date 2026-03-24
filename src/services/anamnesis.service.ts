@@ -75,14 +75,11 @@ export class AnamnesisService {
 
   static async listTemplates(clinicId: string) {
     return prisma.anamnesisTemplate.findMany({
-      where: { clinicId },
+      where: {
+        OR: [{ clinicId }, { isGlobal: true }],
+      },
       include: {
-        _count: {
-          select: {
-            sections: true,
-            assessments: true,
-          },
-        },
+        _count: { select: { sections: true, assessments: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -90,7 +87,11 @@ export class AnamnesisService {
 
   static async getTemplateById(id: string, clinicId: string) {
     const template = await prisma.anamnesisTemplate.findFirst({
-      where: { id, clinicId },
+      where: {
+        id,
+        // Garante que a clínica consegue enxergar o template se ele for dela OU se for global
+        OR: [{ clinicId }, { isGlobal: true }],
+      },
       include: {
         sections: {
           orderBy: { order: "asc" },
@@ -131,7 +132,10 @@ export class AnamnesisService {
     data: UpdateTemplateInput
   ) {
     const template = await prisma.anamnesisTemplate.findFirst({
-      where: { id, clinicId },
+      where: {
+        id,
+        OR: [{ clinicId }, { isGlobal: true }],
+      },
       include: {
         _count: {
           select: { assessments: true },
@@ -144,6 +148,47 @@ export class AnamnesisService {
     }
 
     const { sections, ...templateData } = data;
+
+    // TRAVA DE SEGURANÇA (CTO Level): Se for Global, cria uma cópia silenciosa
+    // com as edições do usuário vinculadas à clínica dele. Ninguém altera o Global.
+    if (template.isGlobal) {
+      return prisma.$transaction(async (tx) => {
+        const newTemplate = await tx.anamnesisTemplate.create({
+          data: {
+            name: templateData.name || template.name,
+            description: templateData.description ?? template.description,
+            professionalType: templateData.professionalType,
+            category: templateData.category,
+            isActive: templateData.isActive ?? true,
+            isGlobal: false, // <-- A cópia nunca é global! Pertence à clínica.
+            clinicId,
+          },
+        });
+
+        if (sections) {
+          for (const section of sections) {
+            const { questions, ...sectionData } = section;
+            const createdSection = await tx.anamnesisSection.create({
+              data: {
+                title: sectionData.title,
+                order: sectionData.order,
+                templateId: newTemplate.id,
+              },
+            });
+            for (const question of questions) {
+              await this.createQuestionWithSubQuestions(
+                tx,
+                createdSection.id,
+                question,
+                null
+              );
+            }
+          }
+        }
+        return newTemplate;
+      });
+    }
+
     const hasAssessments = template._count.assessments > 0;
 
     if (hasAssessments && sections) {
@@ -162,7 +207,10 @@ export class AnamnesisService {
           data: {
             name: templateData.name || template.name,
             description: templateData.description ?? template.description,
+            professionalType: templateData.professionalType,
+            category: templateData.category,
             isActive: templateData.isActive ?? true,
+            isGlobal: false,
             clinicId,
           },
         });
@@ -195,7 +243,10 @@ export class AnamnesisService {
     return prisma.$transaction(async (tx) => {
       const updatedTemplate = await tx.anamnesisTemplate.update({
         where: { id },
-        data: templateData,
+        data: {
+          ...templateData,
+          isGlobal: false, // Garante que updates de rotina não transformem em global
+        },
       });
 
       if (sections && !hasAssessments) {
@@ -229,6 +280,7 @@ export class AnamnesisService {
   }
 
   static async deleteTemplate(id: string, clinicId: string) {
+    // Busca apenas pelo clinicId. Assim, se tentarem deletar um Global, não vão conseguir achar.
     const template = await prisma.anamnesisTemplate.findFirst({
       where: { id, clinicId },
       include: {
@@ -239,7 +291,9 @@ export class AnamnesisService {
     });
 
     if (!template) {
-      throw new Error("Template not found");
+      throw new Error(
+        "Template not found or access denied (Cannot delete global templates)."
+      );
     }
 
     if (template._count.assessments > 0) {
@@ -277,7 +331,10 @@ export class AnamnesisService {
     const templateData = {
       name: `${originalTemplate.name} (Cópia)`,
       description: originalTemplate.description,
+      professionalType: originalTemplate.professionalType,
+      category: originalTemplate.category,
       isActive: originalTemplate.isActive,
+      isGlobal: false,
       sections: originalTemplate.sections.map((section) => ({
         title: section.title,
         order: section.order,
@@ -296,12 +353,10 @@ export class AnamnesisService {
     clinicId: string,
     data: CreateAssessmentInput
   ) {
-    // 1. Verificação de segurança: O agendamento pertence a um paciente desta clínica?
-    // Usamos findFirst com filtro no patient.clinicId
     const appointment = await prisma.appointment.findFirst({
       where: {
         id: appointmentId,
-        patient: { clinicId: clinicId }, // SEGURANÇA AQUI
+        patient: { clinicId: clinicId },
       },
       select: { patientId: true },
     });
@@ -341,7 +396,6 @@ export class AnamnesisService {
     });
   }
 
-  // 2. Recebe clinicId para garantir isolamento
   static async getAssessmentByAppointment(
     appointmentId: string,
     clinicId: string
@@ -349,7 +403,7 @@ export class AnamnesisService {
     const appointment = await prisma.appointment.findFirst({
       where: {
         id: appointmentId,
-        patient: { clinicId: clinicId }, // SEGURANÇA AQUI
+        patient: { clinicId: clinicId },
       },
       include: {
         patient: true,
@@ -392,10 +446,9 @@ export class AnamnesisService {
 
     let template = appointment.assessment?.template;
     if (!template) {
-      // Usa o clinicId passado e validado
       const foundTemplate = await prisma.anamnesisTemplate.findFirst({
         where: {
-          clinicId: clinicId, // SEGURANÇA: Usa o ID validado
+          OR: [{ clinicId }, { isGlobal: true }],
           isActive: true,
         },
         include: {
@@ -437,7 +490,7 @@ export class AnamnesisService {
     return prisma.patientAssessment.findMany({
       where: {
         patientId,
-        clinicId: clinicId, // SEGURANÇA: Filtra pela clínica atual
+        clinicId: clinicId,
       },
       include: {
         appointment: {
@@ -455,11 +508,10 @@ export class AnamnesisService {
   }
 
   static async getAssessmentById(id: string, clinicId: string) {
-    // findFirst para poder usar o clinicId no where
     const assessment = await prisma.patientAssessment.findFirst({
       where: {
         id,
-        clinicId: clinicId, // SEGURANÇA: Filtra pela clínica atual
+        clinicId: clinicId,
       },
       include: {
         template: { select: { name: true } },

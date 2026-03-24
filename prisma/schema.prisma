@@ -613,13 +613,16 @@ enum QuestionType {
 }
 
 model AnamnesisTemplate {
-  id          String  @id @default(uuid())
-  name        String
-  description String?
-  clinicId    String
-  isActive    Boolean @default(true)
+  id               String  @id @default(uuid())
+  name             String
+  description      String?
+  clinicId         String?
+  isActive         Boolean @default(true)
+  professionalType String?
+  category         String?
+  isGlobal         Boolean @default(false)
 
-  clinic      Clinic              @relation(fields: [clinicId], references: [id])
+  clinic      Clinic?             @relation(fields: [clinicId], references: [id])
   sections    AnamnesisSection[]
   assessments PatientAssessment[]
 

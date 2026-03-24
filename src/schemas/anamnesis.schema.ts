@@ -1,3 +1,4 @@
+// schemas/anamnesis.schema.ts
 import { z } from "zod";
 
 const questionTypeEnum = z.enum([
@@ -33,7 +34,10 @@ const sectionSchema = z.object({
 export const createTemplateSchema = z.object({
   name: z.string().min(1, "Nome do template é obrigatório"),
   description: z.string().optional().nullable(),
+  professionalType: z.string().optional().nullable(),
+  category: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
+  isGlobal: z.boolean().default(false).optional(),
   sections: z.array(sectionSchema),
 });
 
