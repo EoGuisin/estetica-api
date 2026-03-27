@@ -18,6 +18,7 @@ interface UserPayload {
   roleId: string | null;
   clinicId: string | null;
   accountId: string;
+  isSystemOwner: boolean;
 }
 
 export class AuthService {
@@ -28,7 +29,6 @@ export class AuthService {
       where: { email },
       include: {
         role: true,
-        // CORREÇÃO 1: Mudamos de 'clinic' para 'clinics' (Array)
         clinics: {
           select: { accountId: true, id: true, name: true, status: true },
         },
@@ -51,7 +51,7 @@ export class AuthService {
       throw new Error("Chave secreta JWT não configurada.");
     }
 
-    // --- CORREÇÃO 2: Lógica para descobrir a Conta ---
+    // --- Lógica para descobrir a Conta ---
     let accountId: string;
 
     if (user.ownedAccount) {
@@ -60,8 +60,10 @@ export class AuthService {
     } else if (user.clinics && user.clinics.length > 0) {
       // Se é funcionário, pega a conta da primeira clínica vinculada
       accountId = user.clinics[0].accountId;
+    } else if (user.isSystemOwner) {
+      // <--- ADICIONADO: Se for o Super Admin do sistema, ele pode não ter clínica/conta amarrada!
+      accountId = "SYSTEM_ADMIN_ACCOUNT";
     } else {
-      // Caso raro: Usuário existe mas não tem conta nem clínica (erro de dados)
       throw {
         code: "UNAUTHORIZED",
         message: "Usuário sem vínculo com nenhuma conta.",
@@ -77,11 +79,12 @@ export class AuthService {
       roleId: user.roleId,
       clinicId: defaultClinicId,
       accountId: accountId,
+      isSystemOwner: user.isSystemOwner,
     };
 
     const token = jwt.sign(payload, secret, { expiresIn: "7d" });
 
-    // Remove dados sensíveis
+    // Remove dados sensíveis para retornar ao front-end
     const { passwordHash, clinics, ownedAccount, ...userBase } = user;
 
     const userToReturn = {
@@ -89,6 +92,7 @@ export class AuthService {
       accountId: accountId,
       clinics: clinics,
       ownedAccount: ownedAccount,
+      isSystemOwner: user.isSystemOwner, // <--- Garantindo que o front receba isso direto no objeto user
     };
 
     return { user: userToReturn, token };
@@ -176,6 +180,7 @@ export class AuthService {
       roleId: result.newUser.roleId,
       clinicId: result.newClinic.id,
       accountId: result.newAccount.id,
+      isSystemOwner: false,
     };
     const token = jwt.sign(payload, secret, { expiresIn: "7d" });
 

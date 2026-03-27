@@ -30,6 +30,7 @@ import { cashRegisterRoutes } from "./routes/cashRegister.routes";
 import { bankAccountRoutes } from "./routes/bankAccount.routes";
 import { reportRoutes } from "./routes/report.routes";
 import { clinicRoutes as clinicSettingsRoutes } from "./routes/clinic.routes";
+import { ticketRoutes } from "./routes/ticket.routes";
 
 // --- MIDDLEWARES E NOVAS ROTAS ---
 import { authMiddleware } from "./middleware/auth.middleware";
@@ -101,6 +102,7 @@ const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
     sub.register(prescriptionRoutes, { prefix: "/prescriptions" });
     sub.register(userRoutes, { prefix: "/users" });
     sub.register(anamnesisRoutes, { prefix: "/anamnesis" });
+    sub.register(ticketRoutes, { prefix: "/tickets" });
   });
 
   // --- GRUPO 2: FINANCEIRO, ESTOQUE E CADASTROS (Acesso: ADM, COMERCIAL, SECRETÁRIA) ---
