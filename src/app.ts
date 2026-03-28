@@ -95,7 +95,7 @@ const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
       roleGuard(["ADMIN", "COMMERCIAL", "SECRETARY", "PROFESSIONAL"])
     );
 
-    sub.register(dashboardRoutes, { prefix: "/dashboard" });
+    sub.register(dashboardRoutes, { prefix: "/main" });
     sub.register(appointmentRoutes, { prefix: "/appointments" });
     sub.register(attendanceRoutes, { prefix: "/attendance" });
     sub.register(medicalReportRoutes, { prefix: "/medical-reports" });

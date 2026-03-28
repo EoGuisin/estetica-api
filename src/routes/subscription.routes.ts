@@ -87,11 +87,11 @@ export async function subscriptionRoutes(app: FastifyInstance) {
       payment_method_collection: "always",
       payment_method_types: ["card"],
       line_items: lineItems,
-      // Sucesso: Vai para o dashboard
-      success_url: `${process.env.FRONTEND_URL}/dashboard?success=true`,
-      // Cancelamento: Volta para o dashboard (onde ele verá que está inativo)
+      // Sucesso: Vai para o main
+      success_url: `${process.env.FRONTEND_URL}/main?success=true`,
+      // Cancelamento: Volta para o main (onde ele verá que está inativo)
       // Isso evita erro 404 se /settings/billing não for acessível
-      cancel_url: `${process.env.FRONTEND_URL}/dashboard?canceled=true`,
+      cancel_url: `${process.env.FRONTEND_URL}/main?canceled=true`,
 
       subscription_data: subscriptionData,
       allow_promotion_codes: true,
