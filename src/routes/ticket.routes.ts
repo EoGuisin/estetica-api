@@ -9,4 +9,5 @@ export async function ticketRoutes(app: FastifyInstance) {
   app.get("/admin/all", TicketController.listAllSystemTickets);
   app.get("/admin/:id", TicketController.getAdminTicketById);
   app.post("/admin/:id/messages", TicketController.addAdminMessage);
+  app.post("/upload", TicketController.uploadAttachment);
 }

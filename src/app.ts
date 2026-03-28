@@ -47,12 +47,12 @@ import { adminRoutes } from "./routes/admin.routes";
 };
 
 export const app = fastify({
-  bodyLimit: 5 * 1024 * 1024,
+  bodyLimit: 10 * 1024 * 1024,
 });
 
 app.register(multipart, {
   limits: {
-    fileSize: 5 * 1024 * 1024,
+    fileSize: 10 * 1024 * 1024,
   },
 });
 
@@ -152,11 +152,21 @@ const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
 app.register(clinicRoutes);
 
 app.setErrorHandler((error, request, reply) => {
+  // Trata erro de Body muito grande (JSON pesado)
   if (error.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
     return reply.status(413).send({
-      message: "A imagem enviada é muito grande. O limite é de 5MB.",
+      message: "Os dados enviados são muito pesados. O limite é de 10MB.",
     });
   }
+
+  // 3. AQUI ESTÁ A CORREÇÃO: Trata o erro específico do Fastify Multipart para arquivos pesados
+  if (error.code === "FST_REQ_FILE_TOO_LARGE") {
+    return reply.status(413).send({
+      message:
+        "O arquivo enviado é muito grande. O limite máximo é de 10MB por arquivo.",
+    });
+  }
+
   if (error instanceof ZodError) {
     const firstIssue = error.issues[0];
     const message = firstIssue ? firstIssue.message : "Erro de validação";
@@ -166,6 +176,7 @@ app.setErrorHandler((error, request, reply) => {
       issues: error.format(),
     });
   }
+
   console.error(error);
   return reply.status(500).send({ message: "Erro interno do servidor." });
 });

@@ -4,6 +4,7 @@ import {
   createTicketSchema,
   addTicketMessageSchema,
 } from "../schemas/ticket.schema";
+import { UploadService } from "../services/upload.service";
 
 interface DecodedUser {
   userId: string;
@@ -122,5 +123,26 @@ export class TicketController {
     const data = addTicketMessageSchema.parse(request.body);
     const message = await TicketService.addAdminMessage(id, user.userId, data);
     return reply.status(201).send(message);
+  }
+
+  static async uploadAttachment(request: FastifyRequest, reply: FastifyReply) {
+    const data = await request.file();
+
+    if (!data) {
+      return reply.status(400).send({ message: "Nenhum arquivo enviado." });
+    }
+
+    const buffer = await data.toBuffer();
+
+    try {
+      const url = await UploadService.uploadTicketFile(
+        buffer,
+        data.filename,
+        data.mimetype
+      );
+      return reply.status(200).send({ url });
+    } catch (error: any) {
+      return reply.status(500).send({ message: error.message });
+    }
   }
 }
