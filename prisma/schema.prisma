@@ -1134,7 +1134,7 @@ model TicketMessage {
 
   attachments TicketAttachment[]
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(dbgenerated("NOW()"))
   updatedAt DateTime @updatedAt
 
   @@index([ticketId])
