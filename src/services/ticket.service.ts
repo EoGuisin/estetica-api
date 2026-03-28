@@ -55,12 +55,12 @@ export class TicketService {
       where: { id: ticketId, clinicId },
       include: {
         openedBy: { select: { id: true, fullName: true } },
-        attachments: true, // Traz os anexos iniciais do ticket
+        attachments: true,
         messages: {
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           include: {
             sender: { select: { id: true, fullName: true } },
-            attachments: true, // Traz os anexos de cada mensagem
+            attachments: true,
           },
           where: userRole !== "ADMIN" ? { isInternal: false } : undefined,
         },
@@ -161,7 +161,7 @@ export class TicketService {
         clinic: { select: { id: true, name: true } },
         attachments: true,
         messages: {
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           include: {
             sender: {
               select: { id: true, fullName: true, isSystemOwner: true },
