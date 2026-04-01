@@ -58,6 +58,7 @@ app.register(multipart, {
 
 app.register(cors, {
   origin: [
+    "http://localhost:3000",
     "http://localhost:3001",
     "https://www.bellflow.com.br",
     "https://bellflow.com.br",
