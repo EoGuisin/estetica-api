@@ -63,6 +63,7 @@ app.register(cors, {
     "https://www.bellflow.com.br",
     "https://bellflow.com.br",
     "https://app.bellflow.com.br",
+    "https://admin.bellflow.com.br",
     "https://www.app.bellflow.com.br",
   ],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
