@@ -10,7 +10,6 @@ export class AdminReportsService {
     const dateFilter =
       startDate && endDate ? { gte: startDate, lte: endDate } : undefined;
 
-    // Stripe usa segundos, não milissegundos
     const unixStart = startDate
       ? Math.floor(startDate.getTime() / 1000)
       : undefined;
@@ -29,35 +28,26 @@ export class AdminReportsService {
       prisma.account.count({ where: { createdAt: dateFilter } }),
     ]);
 
-    let revenue = 0;
-    try {
-      console.log(
-        `[STRIPE LOG] Buscando Invoices pagas entre: ${unixStart} e ${unixEnd}`
-      );
+    let grossRevenue = 0;
+    let netRevenue = 0;
 
-      const invoices = await stripe.invoices
+    try {
+      const transactions = await stripe.balanceTransactions
         .list({
-          status: "paid",
           created: { gte: unixStart, lte: unixEnd },
+          type: "charge",
         })
         .autoPagingToArray({ limit: 5000 });
 
-      console.log(
-        `[STRIPE LOG] Total de faturas pagas encontradas: ${invoices.length}`
-      );
-      if (invoices.length > 0) {
-        console.log(
-          `[STRIPE LOG] Exemplo da primeira fatura: ID=${invoices[0].id}, Valor Cru=${invoices[0].amount_paid} (em centavos), Moeda=${invoices[0].currency}`
-        );
-      }
-
-      revenue = invoices.reduce((acc, inv) => acc + inv.amount_paid / 100, 0);
-      console.log(`[STRIPE LOG] Receita Total Calculada (R$): ${revenue}`);
+      transactions.forEach((txn) => {
+        grossRevenue += txn.amount / 100;
+        netRevenue += txn.net / 100;
+      });
     } catch (e) {
-      console.error("[STRIPE ERROR] Erro ao buscar invoices:", e);
+      console.error("[STRIPE ERROR] Erro ao buscar fluxo de caixa:", e);
     }
 
-    return { active, canceled, trial, newUsers, revenue };
+    return { active, canceled, trial, newUsers, grossRevenue, netRevenue };
   }
 
   static async getConversionRate(startDate?: Date, endDate?: Date) {
@@ -67,9 +57,9 @@ export class AdminReportsService {
     const unixEnd = endDate ? Math.floor(endDate.getTime() / 1000) : undefined;
 
     try {
-      console.log(
-        `[STRIPE LOG] Buscando assinaturas (Conversão) entre: ${unixStart} e ${unixEnd}`
-      );
+    //   console.log(
+    //     `[STRIPE LOG] Buscando assinaturas (Conversão) entre: ${unixStart} e ${unixEnd}`
+    //   );
 
       const subs = await stripe.subscriptions
         .list({
@@ -78,17 +68,17 @@ export class AdminReportsService {
         })
         .autoPagingToArray({ limit: 5000 });
 
-      console.log(
-        `[STRIPE LOG] Total de assinaturas no período: ${subs.length}`
-      );
+    //   console.log(
+    //     `[STRIPE LOG] Total de assinaturas no período: ${subs.length}`
+    //   );
 
       const withTrial = subs.filter((s) => s.trial_end !== null);
-      console.log(
-        `[STRIPE LOG] Dessas, quantas tiveram trial_end configurado: ${withTrial.length}`
-      );
+    //   console.log(
+    //     `[STRIPE LOG] Dessas, quantas tiveram trial_end configurado: ${withTrial.length}`
+    //   );
 
       const converted = withTrial.filter((s) => s.status === "active").length;
-      console.log(`[STRIPE LOG] Quantas estão ativas hoje: ${converted}`);
+    //   console.log(`[STRIPE LOG] Quantas estão ativas hoje: ${converted}`);
 
       return {
         rate: withTrial.length > 0 ? (converted / withTrial.length) * 100 : 0,

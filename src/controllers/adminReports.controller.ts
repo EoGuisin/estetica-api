@@ -8,7 +8,15 @@ export class AdminReportsController {
       startDate ? new Date(startDate) : undefined,
       endDate ? new Date(endDate) : undefined
     );
-    return reply.send(data);
+
+    return reply.send({
+      active: data.active,
+      canceled: data.canceled,
+      trial: data.trial,
+      newUsers: data.newUsers,
+      revenue: data.grossRevenue,
+      netRevenue: data.netRevenue,
+    });
   }
 
   static async getConversion(request: FastifyRequest, reply: FastifyReply) {
