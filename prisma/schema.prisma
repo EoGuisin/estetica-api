@@ -326,23 +326,22 @@ model Supplier {
 }
 
 model Product {
-  id          String  @id @default(uuid())
-  name        String
-  description String?
-  sku         String? @unique // Código de barras ou SKU para identificação única
-
-  // Relacionamentos com os catálogos
-  categoryId String
-  brandId    String
-  clinicId   String
+  id            String  @id @default(uuid())
+  name          String
+  description   String?
+  sku           String? @unique
+  categoryId    String
+  brandId       String
+  clinicId      String
+  lastCostPrice Decimal @default(0) @db.Decimal(10, 2)
 
   category ProductCategory @relation(fields: [categoryId], references: [id])
   brand    ProductBrand    @relation(fields: [brandId], references: [id])
   clinic   Clinic          @relation(fields: [clinicId], references: [id])
 
   // Controle de Estoque
-  currentStock      Int  @default(0) // Quantidade atual em estoque
-  lowStockThreshold Int? @default(0) // Limite para alerta de estoque baixo
+  currentStock      Int  @default(0)
+  lowStockThreshold Int? @default(0)
 
   stockMovements StockMovement[]
 
@@ -582,20 +581,27 @@ model TreatmentPlanProcedure {
   @@map("treatment_plan_procedures")
 }
 
+enum AppointmentCategory {
+  EVALUATION
+  SESSION
+  RETURN
+}
+
 model Appointment {
   id        String   @id @default(uuid())
   date      DateTime
-  startTime String // "14:30"
-  endTime   String // "15:30"
+  startTime String
+  endTime   String
   notes     String?
   status    String   @default("SCHEDULED") // SCHEDULED, CONFIRMED, CANCELED, COMPLETED
 
   patientId                String
   professionalId           String
   appointmentTypeId        String
-  treatmentPlanId          String? // Optional, if it's a session from a plan
+  treatmentPlanId          String?
   treatmentPlanProcedureId String?
 
+  category               AppointmentCategory     @default(SESSION)
   patient                Patient                 @relation(fields: [patientId], references: [id], onDelete: Cascade)
   professional           User                    @relation(fields: [professionalId], references: [id])
   appointmentType        AppointmentType         @relation(fields: [appointmentTypeId], references: [id])

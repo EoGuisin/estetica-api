@@ -5,6 +5,8 @@ export const createAppointmentSchema = z.object({
   patientId: z.string().uuid("ID do paciente inválido"),
   professionalId: z.string().uuid("ID do profissional inválido"),
   appointmentTypeId: z.string().uuid("ID do tipo de agendamento inválido"),
+  category: z.enum(["EVALUATION", "SESSION", "RETURN"]),
+
   date: z.string().refine((date) => !Number.isNaN(Date.parse(date)), {
     message: "Formato de data inválido",
   }),
@@ -22,7 +24,7 @@ export const createAppointmentSchema = z.object({
     ),
   notes: z.string().optional().nullable(),
   treatmentPlanId: z.string().uuid().optional().nullable(),
-  treatmentPlanProcedureId: z.string().uuid(),
+  treatmentPlanProcedureId: z.string().uuid().optional().nullable(),
 });
 
 export const updateAppointmentStatusSchema = z.object({

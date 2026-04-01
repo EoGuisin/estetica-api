@@ -150,7 +150,7 @@ export class AppointmentService {
       };
 
       throw new SchedulingError(
-        `O profissional ${professional.fullName} não atende neste dia da semana (${diasTraduzidos[dayOfWeekString]}).`
+        `O profissional ${professional.fullName} não atende neste dia da semana (${diasTraduzidos[dayOfWeekString]}). \n\n Vá até Equipes e Usuários e edite o horário de atendimento do profissional selecionado.`
       );
     }
 
@@ -241,18 +241,30 @@ export class AppointmentService {
       }
     }
 
+    if (
+      data.category === "SESSION" &&
+      (!data.treatmentPlanId || !data.treatmentPlanProcedureId)
+    ) {
+      throw new SchedulingError(
+        "Para agendamentos do tipo SESSÃO, é obrigatório vincular um plano de tratamento e um procedimento."
+      );
+    }
+
     // 6. CRIAR
     const appointment = await prisma.appointment.create({
       data: {
         patientId: data.patientId,
         professionalId: data.professionalId,
         appointmentTypeId: data.appointmentTypeId,
+        category: data.category,
         startTime: data.startTime,
         endTime: data.endTime,
         notes: data.notes,
         date: appointmentDate,
-        treatmentPlanId: data.treatmentPlanId,
-        treatmentPlanProcedureId: data.treatmentPlanProcedureId,
+        treatmentPlanId:
+          data.category === "SESSION" ? data.treatmentPlanId : null,
+        treatmentPlanProcedureId:
+          data.category === "SESSION" ? data.treatmentPlanProcedureId : null,
       },
     });
 
