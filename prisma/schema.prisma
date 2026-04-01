@@ -89,6 +89,7 @@ model Subscription {
   // Status do Stripe
   stripeSubscriptionId String?  @unique
   status               String // "active", "past_due", "canceled", "incomplete"
+  cancelAtPeriodEnd    Boolean  @default(false)
   currentPeriodStart   DateTime
   currentPeriodEnd     DateTime
 

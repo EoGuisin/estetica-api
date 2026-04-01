@@ -1,4 +1,3 @@
-// src/controllers/account.controller.ts
 import { FastifyRequest, FastifyReply } from "fastify";
 import { AccountService } from "../services/account.service";
 import { createClinicSchema } from "../schemas/account.schema";
@@ -22,14 +21,9 @@ export class AccountController {
     return reply.send(clinics);
   }
 
-  // --- CORREÇÃO AQUI ---
-  // O Controller recebe (request, reply), extrai o ID e chama o Service
   static async getSubscription(request: FastifyRequest, reply: FastifyReply) {
     const { accountId } = request.user;
-
-    // Agora passamos uma string limpa para o service
     const subscription = await AccountService.getSubscription(accountId);
-
     return reply.send(subscription);
   }
 
@@ -40,27 +34,34 @@ export class AccountController {
       const newClinic = await AccountService.createClinic(accountId, data);
       return reply.status(201).send(newClinic);
     } catch (error: any) {
-      if (error.code === "CONFLICT") {
+      if (error.code === "CONFLICT")
         return reply.status(409).send({ message: error.message });
-      }
-      if (error.code === "PAYMENT_REQUIRED") {
+      if (error.code === "PAYMENT_REQUIRED")
         return reply.status(402).send({ message: error.message });
-      }
-      if (error.code === "FORBIDDEN") {
+      if (error.code === "FORBIDDEN")
         return reply.status(403).send({ message: error.message });
-      }
       throw error;
     }
   }
 
   static async listMyClinics(request: FastifyRequest, reply: FastifyReply) {
     const user = request.user as unknown as DecodedUser;
-
-    // CORREÇÃO: Passamos user.userId
     const clinics = await AccountService.listUserClinics(
       user.userId,
       user.accountId
     );
     return reply.send(clinics);
+  }
+
+  // --- NOVA ROTA DE CANCELAMENTO ---
+  static async cancelSubscription(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    const { accountId } = request.user;
+    const { reason, description } = request.body as any;
+
+    await AccountService.cancelSubscription(accountId, reason, description);
+    return reply.send({ success: true });
   }
 }

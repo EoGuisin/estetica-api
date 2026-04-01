@@ -16,7 +16,6 @@ export async function webhookRoutes(app: FastifyInstance) {
 
   app.post("/webhooks/stripe", async (request, reply) => {
     const signature = request.headers["stripe-signature"] as string;
-
     let event: Stripe.Event;
 
     try {
@@ -40,8 +39,6 @@ export async function webhookRoutes(app: FastifyInstance) {
 
     if (relevantEvents.has(event.type)) {
       const session = event.data.object as any;
-
-      // Lógica de IDs
       const subscriptionId = session.subscription || session.id;
       let customerId = session.customer;
 
@@ -59,9 +56,7 @@ export async function webhookRoutes(app: FastifyInstance) {
         }
       }
 
-      if (!customerId) {
-        return reply.status(200).send();
-      }
+      if (!customerId) return reply.status(200).send();
 
       const account = await prisma.account.findUnique({
         where: { stripeCustomerId: customerId as string },
@@ -69,16 +64,11 @@ export async function webhookRoutes(app: FastifyInstance) {
 
       if (!account) {
         console.log(
-          `⚠️ Ignorando evento de teste. Conta não encontrada no banco: ${customerId}`
+          `⚠️ Ignorando evento de teste. Conta não encontrada: ${customerId}`
         );
         return reply.status(200).send();
       }
 
-      // =================================================================
-      // LÓGICA DE SOMA BLINDADA (CORREÇÃO DO ERRO DE EXPANSÃO)
-      // =================================================================
-
-      // 1. Buscamos a lista SEM expandir o produto profundamente (evita o erro 4 levels)
       const subscriptions = await stripe.subscriptions.list({
         customer: customerId as string,
         status: "all",
@@ -91,63 +81,46 @@ export async function webhookRoutes(app: FastifyInstance) {
       let hasApp = false;
       let hasFunnel = false;
       let hasWhats = false;
-
       let mainStatus = "canceled";
       let maxPeriodEnd = 0;
       let planIdDb = "";
 
-      console.log(
-        `🔄 Recalculando conta ${account.id}. Encontradas ${subscriptions.data.length} assinaturas.`
-      );
+      // NOVA VARIÁVEL AQUI
+      let willCancelAtPeriodEnd = false;
 
       for (const sub of subscriptions.data) {
-        // Ignora inativas
         if (
           sub.status !== "active" &&
           sub.status !== "trialing" &&
           sub.status !== "past_due"
-        ) {
+        )
           continue;
-        }
 
         if (sub.status === "active" || sub.status === "trialing") {
           mainStatus = sub.status;
+          // Se qualquer assinatura ativa do cliente estiver agendada para cancelar, ativamos a flag
+          if (sub.cancel_at_period_end) willCancelAtPeriodEnd = true;
         }
 
-        // Data
         const subAny = sub as any;
         const currentEnd = subAny.trial_end || subAny.current_period_end;
-        if (currentEnd > maxPeriodEnd) {
-          maxPeriodEnd = currentEnd;
-        }
+        if (currentEnd > maxPeriodEnd) maxPeriodEnd = currentEnd;
 
-        // 2. Itera sobre os itens
         for (const item of sub.items.data) {
           const productOrId = item.price.product;
           const quantity = item.quantity || 1;
-
           let product: Stripe.Product;
 
-          // 3. BUSCA MANUAL DO PRODUTO (AQUI ESTÁ A CORREÇÃO)
-          // Como não expandimos na lista para evitar o erro, buscamos agora pelo ID.
           try {
-            if (typeof productOrId === "string") {
+            if (typeof productOrId === "string")
               product = await stripe.products.retrieve(productOrId);
-            } else {
-              product = productOrId as Stripe.Product;
-            }
+            else product = productOrId as Stripe.Product;
           } catch (err) {
-            console.error(`Erro ao buscar produto ${productOrId}`, err);
-            continue; // Pula se der erro nesse produto específico
+            continue;
           }
 
           const metadata = product.metadata || {};
-          console.log(
-            `   - Item: ${product.name} (Qtd: ${quantity}) - Meta:`,
-            metadata
-          );
 
-          // Planos Base
           if (metadata.plan_type === "ESSENTIAL") {
             totalUsers += 10;
             totalStorage += BigInt(10) * GB_TO_BYTES;
@@ -173,11 +146,8 @@ export async function webhookRoutes(app: FastifyInstance) {
             }
           }
 
-          // Add-ons
-          if (metadata.feature_user) {
-            const addUsers = parseInt(metadata.feature_user) * quantity;
-            totalUsers += addUsers;
-          }
+          if (metadata.feature_user)
+            totalUsers += parseInt(metadata.feature_user) * quantity;
           if (metadata.feature_crm === "true") hasCrm = true;
           if (metadata.feature_whats === "true") hasWhats = true;
           if (metadata.feature_ai === "true") hasAi = true;
@@ -186,7 +156,6 @@ export async function webhookRoutes(app: FastifyInstance) {
         }
       }
 
-      // Fallback
       if (!planIdDb) {
         const defaultPlan = await prisma.subscriptionPlan.findFirst();
         planIdDb = defaultPlan?.id || "";
@@ -194,9 +163,6 @@ export async function webhookRoutes(app: FastifyInstance) {
 
       const finalPeriodEnd =
         maxPeriodEnd > 0 ? new Date(maxPeriodEnd * 1000) : new Date();
-      const finalPeriodStart = new Date();
-
-      console.log(`✅ Soma Final -> Usuários: ${totalUsers}`);
 
       await prisma.subscription.upsert({
         where: { accountId: account.id },
@@ -205,7 +171,8 @@ export async function webhookRoutes(app: FastifyInstance) {
           planId: planIdDb,
           stripeSubscriptionId: subscriptionId as string,
           status: mainStatus,
-          currentPeriodStart: finalPeriodStart,
+          cancelAtPeriodEnd: willCancelAtPeriodEnd,
+          currentPeriodStart: new Date(),
           currentPeriodEnd: finalPeriodEnd,
           currentMaxUsers: totalUsers,
           currentMaxStorage: totalStorage,
@@ -218,6 +185,7 @@ export async function webhookRoutes(app: FastifyInstance) {
         update: {
           status: mainStatus,
           planId: planIdDb,
+          cancelAtPeriodEnd: willCancelAtPeriodEnd,
           currentPeriodEnd: finalPeriodEnd,
           currentMaxUsers: totalUsers,
           currentMaxStorage: totalStorage,

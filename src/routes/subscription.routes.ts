@@ -1,4 +1,3 @@
-//src/routes/subscription.routes.ts
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { stripe } from "../lib/stripe";
@@ -8,8 +7,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
   app.post("/checkout", async (request, reply) => {
     const checkoutSchema = z.object({
       accountId: z.string().uuid(),
-      priceId: z.string().optional(), // Agora é opcional (pode ser só add-on ou vir vazio)
-      skipTrial: z.boolean().default(false), // NOVO: Opção para pular o teste
+      priceId: z.string().optional(),
+      skipTrial: z.boolean().default(false),
       addons: z
         .array(
           z.object({
@@ -29,10 +28,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
       include: { owner: true },
     });
 
-    // 1. Monta os itens do carrinho de forma segura
     const lineItems = [];
 
-    // Se tiver um Plano Base (PriceId não vazio), adiciona
     if (priceId && priceId.trim() !== "") {
       lineItems.push({
         price: priceId,
@@ -40,7 +37,6 @@ export async function subscriptionRoutes(app: FastifyInstance) {
       });
     }
 
-    // Se tiver Add-ons, adiciona
     if (addons && addons.length > 0) {
       addons.forEach((addon) => {
         lineItems.push({
@@ -51,10 +47,11 @@ export async function subscriptionRoutes(app: FastifyInstance) {
     }
 
     if (lineItems.length === 0) {
-      throw new Error("Selecione pelo menos um plano ou item para continuar.");
+      return reply.status(400).send({
+        message: "Selecione pelo menos um plano ou item para continuar.",
+      });
     }
 
-    // 2. Cria ou recupera Customer
     let customerId = account.stripeCustomerId;
 
     if (!customerId) {
@@ -70,29 +67,24 @@ export async function subscriptionRoutes(app: FastifyInstance) {
       });
     }
 
-    // 3. Configurações da Assinatura (Trial ou Não)
     const subscriptionData: any = {
       metadata: { accountId: accountId },
     };
 
-    // Só adiciona trial se o usuário NÃO pediu para pular
     if (!skipTrial) {
       subscriptionData.trial_period_days = 3;
     }
 
-    // 4. Cria a Sessão
+    const frontendUrl = process.env.FRONTEND_URL;
+
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: "subscription",
       payment_method_collection: "always",
       payment_method_types: ["card"],
       line_items: lineItems,
-      // Sucesso: Vai para o main
-      success_url: `${process.env.FRONTEND_URL}/main?success=true`,
-      // Cancelamento: Volta para o main (onde ele verá que está inativo)
-      // Isso evita erro 404 se /settings/billing não for acessível
-      cancel_url: `${process.env.FRONTEND_URL}/main?canceled=true`,
-
+      success_url: `${frontendUrl}/main?success=true`,
+      cancel_url: `${frontendUrl}/main?canceled=true`,
       subscription_data: subscriptionData,
       allow_promotion_codes: true,
     });
@@ -100,25 +92,40 @@ export async function subscriptionRoutes(app: FastifyInstance) {
     return { sessionId: session.id, url: session.url };
   });
 
-  // Rota para gerar link do Portal do Cliente (Trocar cartão, cancelar, ver faturas)
+  // Rota do Portal do Cliente BLINDADA
   app.post("/portal", async (request, reply) => {
-    const { accountId } = z
-      .object({ accountId: z.string().uuid() })
-      .parse(request.body);
+    try {
+      const { accountId } = z
+        .object({ accountId: z.string().uuid() })
+        .parse(request.body);
 
-    const account = await prisma.account.findUniqueOrThrow({
-      where: { id: accountId },
-    });
+      const account = await prisma.account.findUniqueOrThrow({
+        where: { id: accountId },
+      });
 
-    if (!account.stripeCustomerId) {
-      throw new Error("Conta ainda não possui vínculo financeiro.");
+      // Se não tem ID no Stripe, devolvemos erro 400 amigável em vez de quebrar a API
+      if (!account.stripeCustomerId) {
+        return reply.status(400).send({
+          message:
+            "Esta conta ainda não possui vínculo financeiro com o Stripe.",
+        });
+      }
+
+      // Fallback salvador: se a variável de ambiente falhar, ele usa o localhost
+      const frontendUrl = process.env.FRONTEND_URL;
+
+      const session = await stripe.billingPortal.sessions.create({
+        customer: account.stripeCustomerId,
+        return_url: `${frontendUrl}/main/settings/account`,
+      });
+
+      return { url: session.url };
+    } catch (error: any) {
+      console.error("[STRIPE PORTAL ERROR]:", error);
+      return reply.status(500).send({
+        message: "Erro ao gerar link do portal do Stripe.",
+        details: error.message,
+      });
     }
-
-    const session = await stripe.billingPortal.sessions.create({
-      customer: account.stripeCustomerId,
-      return_url: `${process.env.FRONTEND_URL}/dashboard/settings/account`,
-    });
-
-    return { url: session.url };
   });
 }
