@@ -36,6 +36,14 @@ export const updateAppointmentStatusSchema = z.object({
     "IN_PROGRESS",
     "WAITING",
   ]),
+  usedProducts: z
+    .array(
+      z.object({
+        productId: z.string().uuid(),
+        quantity: z.number().positive(),
+      })
+    )
+    .optional(),
 });
 
 export const appointmentParamsSchema = z.object({

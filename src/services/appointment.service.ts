@@ -31,8 +31,9 @@ const DAY_MAP: Record<number, string> = {
 };
 
 export class AppointmentService {
+  // Adicione usedProducts como parâmetro opcional
   static async updateStatus(
-    clinicId: string, // ADICIONADO
+    clinicId: string,
     appointmentId: string,
     status:
       | "SCHEDULED"
@@ -40,30 +41,25 @@ export class AppointmentService {
       | "CANCELED"
       | "COMPLETED"
       | "IN_PROGRESS"
-      | "WAITING"
+      | "WAITING",
+    usedProducts?: { productId: string; quantity: number }[]
   ) {
-    // 1. Verificação de Segurança
     const appointment = await prisma.appointment.findFirst({
-      where: {
-        id: appointmentId,
-        patient: { clinicId: clinicId }, // Garante que pertence à clínica
-      },
+      where: { id: appointmentId, patient: { clinicId: clinicId } },
     });
 
-    if (!appointment) {
+    if (!appointment)
       throw new Error("Agendamento não encontrado ou acesso negado.");
-    }
 
     return prisma.$transaction(async (tx) => {
+      // 1. Atualiza o status do agendamento
       const updatedAppointment = await tx.appointment.update({
         where: { id: appointmentId },
         data: { status },
-        select: {
-          treatmentPlanProcedureId: true,
-          treatmentPlanId: true,
-        },
+        select: { treatmentPlanProcedureId: true, treatmentPlanId: true },
       });
 
+      // 2. Lógica existente de atualização do Plano de Tratamento...
       if (updatedAppointment.treatmentPlanProcedureId) {
         const realCompletedCount = await tx.appointment.count({
           where: {
@@ -77,6 +73,42 @@ export class AppointmentService {
           where: { id: updatedAppointment.treatmentPlanProcedureId },
           data: { completedSessions: realCompletedCount },
         });
+      }
+
+      // 3. NOVO: Lógica de baixa de estoque
+      if (status === "COMPLETED" && usedProducts && usedProducts.length > 0) {
+        for (const item of usedProducts) {
+          // Busca o produto para validar o estoque
+          const product = await tx.product.findFirst({
+            where: { id: item.productId, clinicId },
+          });
+
+          if (!product)
+            throw new Error(`Produto ${item.productId} não encontrado.`);
+          if (product.currentStock < item.quantity) {
+            throw new Error(
+              `Estoque insuficiente para o produto: ${product.name}`
+            );
+          }
+
+          // Dá baixa no estoque
+          await tx.product.update({
+            where: { id: product.id },
+            data: { currentStock: product.currentStock - item.quantity },
+          });
+
+          // Registra a movimentação de SAÍDA vinculada ao atendimento
+          await tx.stockMovement.create({
+            data: {
+              type: "EXIT",
+              quantity: item.quantity,
+              date: new Date(),
+              productId: product.id,
+              appointmentId: appointmentId,
+              notes: "Uso de material em atendimento/sessão.",
+            },
+          });
+        }
       }
 
       return updatedAppointment;

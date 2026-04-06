@@ -72,14 +72,17 @@ export class AppointmentController {
   }
 
   static async updateStatus(request: FastifyRequest, reply: FastifyReply) {
-    const { clinicId } = request; // ADICIONADO
+    const { clinicId } = request;
     const { appointmentId } = appointmentParamsSchema.parse(request.params);
-    const { status } = updateAppointmentStatusSchema.parse(request.body);
+    const { status, usedProducts } = updateAppointmentStatusSchema.parse(
+      request.body
+    );
 
     const appointment = await AppointmentService.updateStatus(
-      clinicId, // PASSADO PARA O SERVICE
+      clinicId,
       appointmentId,
-      status
+      status,
+      usedProducts
     );
     return reply.send(appointment);
   }

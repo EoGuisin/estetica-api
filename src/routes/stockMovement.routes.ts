@@ -8,4 +8,5 @@ export async function stockMovementRoutes(app: FastifyInstance) {
   app.post("/", StockMovementController.create);
   app.get("/", StockMovementController.list);
   app.delete("/:id", StockMovementController.delete);
+  app.post("/:id/refund", StockMovementController.refund);
 }

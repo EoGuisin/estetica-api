@@ -79,7 +79,14 @@ export class StockMovementService {
     clinicId: string,
     page: number,
     pageSize: number,
-    filters: { productId?: string; type?: "ENTRY" | "EXIT" }
+    filters: {
+      productId?: string;
+      type?: "ENTRY" | "EXIT";
+      startDate?: string;
+      endDate?: string;
+      expiryDate?: string;
+      supplierId?: string;
+    }
   ) {
     const where: Prisma.StockMovementWhereInput = {
       product: {
@@ -90,8 +97,32 @@ export class StockMovementService {
     if (filters.productId) {
       where.productId = filters.productId;
     }
+
     if (filters.type) {
       where.type = filters.type;
+    }
+
+    if (filters.supplierId) {
+      where.supplierId = filters.supplierId;
+    }
+
+    // Filtro por Data da Movimentação (Início e Fim)
+    if (filters.startDate || filters.endDate) {
+      where.date = {};
+      if (filters.startDate) {
+        where.date.gte = new Date(`${filters.startDate}T00:00:00.000Z`);
+      }
+      if (filters.endDate) {
+        where.date.lte = new Date(`${filters.endDate}T23:59:59.999Z`);
+      }
+    }
+
+    // Filtro pela Data de Vencimento do Lote (pegando o dia todo)
+    if (filters.expiryDate) {
+      where.expiryDate = {
+        gte: new Date(`${filters.expiryDate}T00:00:00.000Z`),
+        lte: new Date(`${filters.expiryDate}T23:59:59.999Z`),
+      };
     }
 
     const skip = (page - 1) * pageSize;
@@ -144,6 +175,37 @@ export class StockMovementService {
       });
 
       return tx.stockMovement.delete({ where: { id } });
+    });
+  }
+
+  static async refundUsage(movementId: string, clinicId: string) {
+    return prisma.$transaction(async (tx) => {
+      // Busca a movimentação original que foi uma SAÍDA
+      const originalMovement = await tx.stockMovement.findFirstOrThrow({
+        where: { id: movementId, product: { clinicId }, type: "EXIT" },
+        include: { product: true },
+      });
+
+      // Devolve o saldo pro estoque do produto
+      const newStock =
+        originalMovement.product.currentStock + originalMovement.quantity;
+
+      await tx.product.update({
+        where: { id: originalMovement.productId },
+        data: { currentStock: newStock },
+      });
+
+      // Cria a entrada de estorno para ficar salvo no extrato
+      return tx.stockMovement.create({
+        data: {
+          type: "ENTRY",
+          quantity: originalMovement.quantity,
+          date: new Date(),
+          productId: originalMovement.productId,
+          appointmentId: originalMovement.appointmentId, // Mantém o vínculo
+          notes: `Estorno/Reembolso referente à saída ID: ${movementId}`,
+        },
+      });
     });
   }
 }

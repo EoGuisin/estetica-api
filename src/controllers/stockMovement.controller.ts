@@ -26,18 +26,17 @@ export class StockMovementController {
       pageSize = "15",
       productId,
       type,
-    } = request.query as {
-      page?: string;
-      pageSize?: string;
-      productId?: string;
-      type?: "ENTRY" | "EXIT";
-    };
+      startDate,
+      endDate,
+      expiryDate,
+      supplierId,
+    } = request.query as any;
 
     const result = await StockMovementService.list(
       clinicId,
       Number(page),
       Number(pageSize),
-      { productId, type }
+      { productId, type, startDate, endDate, expiryDate, supplierId }
     );
     return reply.send(result);
   }
@@ -54,6 +53,18 @@ export class StockMovementController {
         return reply.status(409).send({ message: error.message });
       }
       throw error;
+    }
+  }
+
+  static async refund(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { clinicId } = request;
+      const { id } = request.params as { id: string }; // ID da movimentação de saída original
+
+      const movement = await StockMovementService.refundUsage(id, clinicId);
+      return reply.status(201).send(movement);
+    } catch (error: any) {
+      return reply.status(400).send({ message: error.message });
     }
   }
 }
