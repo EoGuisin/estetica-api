@@ -1,3 +1,4 @@
+// src/services/dashboard.service.ts
 import { prisma } from "../lib/prisma";
 import { startOfDay, endOfDay } from "date-fns";
 import { Prisma } from "@prisma/client";
@@ -147,6 +148,16 @@ export class DashboardService {
             name: true,
           },
         },
+        // 👇 IMPORTANTE: Esta é a nova relação N:N que o Front precisa para renderizar os cards de procedimentos
+        treatmentPlanProcedures: {
+          include: {
+            procedure: true,
+            treatmentPlan: {
+              include: { seller: true },
+            },
+          },
+        },
+        // 👇 Mantém a relação antiga (1:N) como fallback se necessário
         treatmentPlan: {
           include: {
             seller: { select: { fullName: true } },
@@ -155,7 +166,6 @@ export class DashboardService {
                 id: true,
                 date: true,
                 status: true,
-                treatmentPlanProcedureId: true,
               },
             },
             procedures: {

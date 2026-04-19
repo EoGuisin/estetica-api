@@ -31,7 +31,6 @@ const DAY_MAP: Record<number, string> = {
 };
 
 export class AppointmentService {
-  // Adicione usedProducts como parâmetro opcional
   static async updateStatus(
     clinicId: string,
     appointmentId: string,
@@ -52,33 +51,33 @@ export class AppointmentService {
       throw new Error("Agendamento não encontrado ou acesso negado.");
 
     return prisma.$transaction(async (tx) => {
-      // 1. Atualiza o status do agendamento
+      // 1. Atualiza o status do agendamento e traz os procedimentos vinculados
       const updatedAppointment = await tx.appointment.update({
         where: { id: appointmentId },
         data: { status },
-        select: { treatmentPlanProcedureId: true, treatmentPlanId: true },
+        include: { treatmentPlanProcedures: true }, // Relação N:N
       });
 
-      // 2. Lógica existente de atualização do Plano de Tratamento...
-      if (updatedAppointment.treatmentPlanProcedureId) {
-        const realCompletedCount = await tx.appointment.count({
-          where: {
-            treatmentPlanProcedureId:
-              updatedAppointment.treatmentPlanProcedureId,
-            status: "COMPLETED",
-          },
-        });
+      // 2. Atualiza a contagem de sessões concluídas para CADA procedimento vinculado
+      if (updatedAppointment.treatmentPlanProcedures.length > 0) {
+        for (const proc of updatedAppointment.treatmentPlanProcedures) {
+          const realCompletedCount = await tx.appointment.count({
+            where: {
+              treatmentPlanProcedures: { some: { id: proc.id } },
+              status: "COMPLETED",
+            },
+          });
 
-        await tx.treatmentPlanProcedure.update({
-          where: { id: updatedAppointment.treatmentPlanProcedureId },
-          data: { completedSessions: realCompletedCount },
-        });
+          await tx.treatmentPlanProcedure.update({
+            where: { id: proc.id },
+            data: { completedSessions: realCompletedCount },
+          });
+        }
       }
 
-      // 3. NOVO: Lógica de baixa de estoque
+      // 3. Lógica de baixa de estoque
       if (status === "COMPLETED" && usedProducts && usedProducts.length > 0) {
         for (const item of usedProducts) {
-          // Busca o produto para validar o estoque
           const product = await tx.product.findFirst({
             where: { id: item.productId, clinicId },
           });
@@ -139,7 +138,7 @@ export class AppointmentService {
     const professional = await prisma.user.findFirst({
       where: {
         id: data.professionalId,
-        clinics: { some: { id: clinicId } }, // Garante que o profissional atua nesta clínica
+        clinics: { some: { id: clinicId } },
       },
       select: {
         fullName: true,
@@ -210,10 +209,6 @@ export class AppointmentService {
           lte: endOfDayQuery,
         },
         status: { not: "CANCELED" },
-        // IMPORTANTE: Filtrar conflitos APENAS dentro da clínica ou GLOBAL?
-        // Se o profissional trabalha em 2 clínicas, ele não pode estar em 2 lugares.
-        // Geralmente, conflito de horário é GLOBAL (sem clinicId no where).
-        // MANTIVE GLOBAL AQUI para evitar double-booking do médico.
       },
       select: { startTime: true, endTime: true },
     });
@@ -238,48 +233,44 @@ export class AppointmentService {
       }
     }
 
-    // 5. LIMITE DE SESSÕES DO PLANO
-    if (data.treatmentPlanProcedureId) {
-      // Segurança: verificar se o item do plano pertence a um plano desta clínica
-      const planItem = await prisma.treatmentPlanProcedure.findFirst({
-        where: {
-          id: data.treatmentPlanProcedureId,
-          treatmentPlan: { clinicId: clinicId },
-        },
-      });
+    // 5. VALIDAÇÃO DE OBRIGATORIEDADE E LIMITE DE SESSÕES PARA MÚLTIPLOS PROCEDIMENTOS
+    if (
+      data.category === "SESSION" &&
+      (!data.procedureIds || data.procedureIds.length === 0)
+    ) {
+      throw new SchedulingError(
+        "Para agendamentos do tipo SESSÃO, é obrigatório vincular pelo menos um procedimento."
+      );
+    }
 
-      if (planItem) {
-        const existingPlanAppointments = await prisma.appointment.findMany({
+    if (data.procedureIds && data.procedureIds.length > 0) {
+      for (const procId of data.procedureIds) {
+        const planItem = await prisma.treatmentPlanProcedure.findFirst({
+          where: { id: procId, treatmentPlan: { clinicId } },
+          include: { procedure: true },
+        });
+
+        if (!planItem) throw new Error("Procedimento do plano não encontrado.");
+
+        const existingApts = await prisma.appointment.findMany({
           where: {
-            treatmentPlanProcedureId: data.treatmentPlanProcedureId,
+            treatmentPlanProcedures: { some: { id: procId } },
             NOT: { status: "CANCELED" },
           },
           select: { date: true },
         });
 
-        if (existingPlanAppointments.length >= planItem.contractedSessions) {
-          const scheduledDates = existingPlanAppointments.map((apt) =>
+        if (existingApts.length >= planItem.contractedSessions) {
+          const scheduledDates = existingApts.map((apt) =>
             format(new Date(apt.date), "dd/MM/yyyy", { locale: ptBR })
           );
 
           throw new SessionLimitError(
-            `Todas as ${planItem.contractedSessions} sessões contratadas já foram agendadas.`,
+            `O procedimento '${planItem.procedure.name}' já teve todas as ${planItem.contractedSessions} sessões agendadas.`,
             scheduledDates
           );
         }
-      } else if (data.treatmentPlanProcedureId) {
-        // Se mandou ID mas não achou na clínica
-        throw new Error("Item do plano de tratamento não encontrado.");
       }
-    }
-
-    if (
-      data.category === "SESSION" &&
-      (!data.treatmentPlanId || !data.treatmentPlanProcedureId)
-    ) {
-      throw new SchedulingError(
-        "Para agendamentos do tipo SESSÃO, é obrigatório vincular um plano de tratamento e um procedimento."
-      );
     }
 
     // 6. CRIAR
@@ -293,10 +284,10 @@ export class AppointmentService {
         endTime: data.endTime,
         notes: data.notes,
         date: appointmentDate,
-        treatmentPlanId:
-          data.category === "SESSION" ? data.treatmentPlanId : null,
-        treatmentPlanProcedureId:
-          data.category === "SESSION" ? data.treatmentPlanProcedureId : null,
+        // Conecta os procedimentos passados no array
+        treatmentPlanProcedures: data.procedureIds?.length
+          ? { connect: data.procedureIds.map((id) => ({ id })) }
+          : undefined,
       },
     });
 
@@ -335,7 +326,7 @@ export class AppointmentService {
     const existing = await prisma.appointment.findFirst({
       where: {
         id: appointmentId,
-        patient: { clinicId: clinicId }, // SEGURANÇA
+        patient: { clinicId: clinicId },
       },
       include: { professional: true },
     });
@@ -356,7 +347,6 @@ export class AppointmentService {
 
     const targetProfessionalId = data.professionalId || existing.professionalId;
 
-    // Se mudou o profissional, verificar se o novo pertence à clínica
     if (
       data.professionalId &&
       data.professionalId !== existing.professionalId
@@ -372,7 +362,6 @@ export class AppointmentService {
       }
     }
 
-    // Tratamento de data no update também
     let targetDate = existing.date;
     if (data.date) {
       targetDate = new Date(data.date + "T00:00:00.000Z");

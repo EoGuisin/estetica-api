@@ -23,8 +23,7 @@ export const createAppointmentSchema = z.object({
       "Formato de hora de fim inválido (HH:MM)"
     ),
   notes: z.string().optional().nullable(),
-  treatmentPlanId: z.string().uuid().optional().nullable(),
-  treatmentPlanProcedureId: z.string().uuid().optional().nullable(),
+  procedureIds: z.array(z.string().uuid()).optional(),
 });
 
 export const updateAppointmentStatusSchema = z.object({

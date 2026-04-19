@@ -263,10 +263,21 @@ export class TreatmentPlanService {
         where: { treatmentPlanId: id },
       });
 
-      await tx.appointment.updateMany({
-        where: { treatmentPlanId: id },
-        data: { treatmentPlanId: null, treatmentPlanProcedureId: null },
+      const appointmentsToUpdate = await tx.appointment.findMany({
+        where: { treatmentPlanProcedures: { some: { treatmentPlanId: id } } },
+        select: { id: true },
       });
+
+      for (const apt of appointmentsToUpdate) {
+        await tx.appointment.update({
+          where: { id: apt.id },
+          data: {
+            treatmentPlanProcedures: {
+              set: [],
+            },
+          },
+        });
+      }
 
       await tx.treatmentPlan.delete({ where: { id } });
     });
@@ -297,6 +308,10 @@ export class TreatmentPlanService {
         procedures: {
           include: {
             procedure: true,
+            // 👇 Adicionado para ver os compromissos ligados aos procedimentos
+            appointments: {
+              select: { id: true, date: true, status: true },
+            },
           },
         },
         paymentInstallments: {

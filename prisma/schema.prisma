@@ -593,25 +593,26 @@ model Appointment {
   startTime String
   endTime   String
   notes     String?
-  status    String   @default("SCHEDULED") // SCHEDULED, CONFIRMED, CANCELED, COMPLETED
+  status    String   @default("SCHEDULED")
 
-  patientId                String
-  professionalId           String
-  appointmentTypeId        String
-  treatmentPlanId          String?
-  treatmentPlanProcedureId String?
+  patientId         String
+  professionalId    String
+  appointmentTypeId String
 
-  category               AppointmentCategory     @default(SESSION)
-  patient                Patient                 @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  professional           User                    @relation(fields: [professionalId], references: [id])
-  appointmentType        AppointmentType         @relation(fields: [appointmentTypeId], references: [id])
-  treatmentPlan          TreatmentPlan?          @relation(fields: [treatmentPlanId], references: [id])
-  assessment             PatientAssessment?
-  clinicalRecord         ClinicalRecord?
-  StockMovement          StockMovement[]
-  treatmentPlanProcedure TreatmentPlanProcedure? @relation(fields: [treatmentPlanProcedureId], references: [id])
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
+  treatmentPlanProcedures TreatmentPlanProcedure[]
+
+  category        AppointmentCategory @default(SESSION)
+  patient         Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  professional    User                @relation(fields: [professionalId], references: [id])
+  appointmentType AppointmentType     @relation(fields: [appointmentTypeId], references: [id])
+  assessment      PatientAssessment?
+  clinicalRecord  ClinicalRecord?
+  StockMovement   StockMovement[]
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  treatmentPlan   TreatmentPlan? @relation(fields: [treatmentPlanId], references: [id])
+  treatmentPlanId String?
 
   @@map("appointments")
 }
