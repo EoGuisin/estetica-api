@@ -41,6 +41,7 @@ import { publicRoutes } from "./routes/public.routes";
 import { webhookRoutes } from "./routes/webhook.routes";
 import { subscriptionRoutes } from "./routes/subscription.routes";
 import { adminRoutes } from "./routes/admin.routes";
+import { aiRoutes } from "./routes/ai.routes";
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -105,6 +106,7 @@ const clinicRoutes = async (app: FastifyInstance, _opts: any) => {
     sub.register(userRoutes, { prefix: "/users" });
     sub.register(anamnesisRoutes, { prefix: "/anamnesis" });
     sub.register(ticketRoutes, { prefix: "/tickets" });
+    sub.register(aiRoutes, { prefix: "/ai" });
   });
 
   // --- GRUPO 2: FINANCEIRO, ESTOQUE E CADASTROS (Acesso: ADM, COMERCIAL, SECRETÁRIA) ---

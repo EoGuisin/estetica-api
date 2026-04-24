@@ -1,6 +1,7 @@
+// src/services/AppointmentService.ts
 import { prisma } from "../lib/prisma";
 import { CreateAppointmentInput } from "../schemas/appointment.schema";
-import { format, getDay, startOfDay, endOfDay, addHours } from "date-fns";
+import { format, getDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 // Custom Error classes
@@ -61,6 +62,7 @@ export class AppointmentService {
       // 2. Atualiza a contagem de sessões concluídas para CADA procedimento vinculado
       if (updatedAppointment.treatmentPlanProcedures.length > 0) {
         for (const proc of updatedAppointment.treatmentPlanProcedures) {
+          // Conta exatamente quantos agendamentos concluídos possuem ESTE procedimento
           const realCompletedCount = await tx.appointment.count({
             where: {
               treatmentPlanProcedures: { some: { id: proc.id } },

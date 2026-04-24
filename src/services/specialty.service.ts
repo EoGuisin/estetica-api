@@ -10,7 +10,7 @@ export class SpecialtyService {
   static async list(clinicId: string) {
     return prisma.specialty.findMany({
       where: {
-        clinicId: clinicId, // <--- FILTRO DE TENANCY
+        clinicId: clinicId,
       },
       include: {
         _count: {

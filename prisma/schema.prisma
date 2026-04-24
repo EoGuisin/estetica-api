@@ -1180,3 +1180,16 @@ model TicketAttachment {
 
   @@map("ticket_attachments")
 }
+
+model KnowledgeArticle {
+  id      String @id @default(uuid())
+  title   String
+  content String @db.Text
+
+  embedding Unsupported("vector(768)")?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("knowledge_articles")
+}

@@ -523,11 +523,21 @@ export class AttendanceService {
     const appointment = await prisma.appointment.findFirstOrThrow({
       where: {
         id: appointmentId,
-        patient: { clinicId: clinicId }, // SEGURANÇA
+        patient: { clinicId: clinicId },
       },
       include: {
         patient: true,
         professional: { select: { fullName: true } },
+        treatmentPlanProcedures: {
+          include: {
+            procedure: {
+              include: {
+                specialty: true,
+              },
+            },
+            treatmentPlan: true,
+          },
+        },
         treatmentPlan: {
           include: {
             procedures: {
